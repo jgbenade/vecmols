@@ -569,10 +569,15 @@ void MOLS::permuteMOLS(vector<lsquare> pMOLS, permutation rowPerm, permutation c
 		//newMOLS[i].resize(n, vector<int>(n, n));
 		if (pMOLS[i].size()>0){ //if the square is not empty (otherwise it cant be permuted)
 
+			unsigned int sz = pMOLS[i].size();
+			for (unsigned int j=0; j<sz; j++){
 
-			for (unsigned int j=0; j<pMOLS[i].size(); j++){
+				permutation z(n, 0);
+				for (unsigned int  jj=0; jj<n; jj++)
+					z[ rowPerm[jj] ] = colPerm[pMOLS[i][j][jj]];
+				newMOLS[i].push_back(z);
 
-				newMOLS[i].push_back(composition(composition(colPerm, pMOLS[i][j]), inverse(rowPerm) ));
+				//newMOLS[i].push_back(composition(composition(colPerm, pMOLS[i][j]), inverse(rowPerm) ));
 			}
 			//for(unsigned int j= pMOLS[i].size();j<n; j++) newMOLS[i][j]= new vector<int>;
 		}
@@ -1500,10 +1505,6 @@ bool MOLS::noSmallerRCS(permutation smallestRCS){
 
 bool MOLS::isSmallest4( ){
 
-	/*vector<lsquare> t1MOLS (k, vector<permutation>(n, vector<int>(n, n)));
-	for (unsigned int i=0; i<k; i++)
-		t1MOLS[i] = partMOLS[i];*/
-
 	if (!noSmallerRCS( partMOLS[1].front() )){
 		/*for (i=0; i<k; i++)
 				printPerm(partMOLS[i].back());
@@ -1516,11 +1517,6 @@ bool MOLS::isSmallest4( ){
 
 bool MOLS::isSmallest4(bool t ){
 
-	/*vector<lsquare> t1MOLS (k, vector<permutation>(n, vector<int>(n, n)));
-	for (unsigned int i=0; i<k; i++)
-		t1MOLS[i] = partMOLS[i];*/
-	if (t)
-		printMOLSPerms(partMOLS);
 
 	if (!noSmallerRCS( partMOLS[1].front() )){
 		/*for (i=0; i<k; i++)
