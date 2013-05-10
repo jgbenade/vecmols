@@ -541,6 +541,7 @@ permutation MOLS::rcs(permutation p1, permutation p2){
 	//return composition(p2, inverse(p1));
 }
 
+//void MOLS::permuteSymbols(vector<lsquare> partMOLS, vector<lsquare> &newMOLS){
 void MOLS::permuteSymbols(vector<lsquare> partMOLS, vector<lsquare> &newMOLS){
 	int i;
 	for (i =0;i<k;i++){
@@ -549,8 +550,7 @@ void MOLS::permuteSymbols(vector<lsquare> partMOLS, vector<lsquare> &newMOLS){
 			lsquare::iterator permIt ;
 			for (permIt = partMOLS[i].begin(); permIt != partMOLS[i].end(); ++permIt){
 				newMOLS[i].push_back(*permIt);
-
-				//newMOLS[i].push_back(copyPerm(*permIt));
+ 				//newMOLS[i].push_back(copyPerm(*permIt));
 			} //TODO
 		/*	for (unsigned int j=0; j< partMOLS[i].size(); j++)
 				newMOLS[i][partMOLS[i][j][0]] = partMOLS[i][j];*/
@@ -565,11 +565,12 @@ void MOLS::permuteSymbols(vector<lsquare> partMOLS, vector<lsquare> &newMOLS){
 void MOLS::permuteMOLS(vector<lsquare> pMOLS, permutation rowPerm, permutation colPerm, vector<lsquare> &newMOLS){
 
 	for (unsigned int i=0; i<k; i++	){
+
 		newMOLS[i].clear();
 		//newMOLS[i].resize(n, vector<int>(n, n));
 		if (pMOLS[i].size()>0){ //if the square is not empty (otherwise it cant be permuted)
-
-			unsigned int sz = pMOLS[i].size();
+			permutation b(n, 0);
+ 			unsigned int sz = pMOLS[i].size();
 			for (unsigned int j=0; j<sz; j++){
 
 				permutation z(n, 0);
@@ -581,9 +582,9 @@ void MOLS::permuteMOLS(vector<lsquare> pMOLS, permutation rowPerm, permutation c
 			}
 			//for(unsigned int j= pMOLS[i].size();j<n; j++) newMOLS[i][j]= new vector<int>;
 		}
+		std::sort(newMOLS[i].begin(), newMOLS[i].end(), My::permutationComparator);
 	}
 
-	//permuteSymbols<k>(finalMOLS, newMOLS);
 
 //	std::list<int> third (second.begin(),second.end());  // iterating through second
 }
@@ -784,7 +785,6 @@ int x;
 			//tempmols has the postpermutation, first make this even smaller by permutin symbols
 
 
-			//permuteSymbols<2>(tempMOLS, newMOLS);
 
 			if (!comparePartialMOLS(partMOLS, newMOLS) ){// if  part > final
 				return;
@@ -1222,9 +1222,9 @@ void MOLS::standardForm(vector<lsquare> pMOLS , int rowUp, int pos ,permutation 
 	permuteSymbols<k>(nMOLS, newMOLS	);*/
 
 	if (!( rowUp ==0 && pos==0)){
- 		vector<lsquare> nMOLS(k, lsquare(n , permutation(n, n)));
-		permuteMOLS(pMOLS, p,id,  nMOLS);
-		permuteSymbols(nMOLS, newMOLS);
+ 		//vector<lsquare> nMOLS(k, lsquare(n , permutation(n, n)));
+		permuteMOLS(pMOLS, p,id,  newMOLS);
+		//permuteSymbols(nMOLS, newMOLS);
 	}
 	else{
 
@@ -1433,9 +1433,9 @@ bool MOLS::noSmallerRCS(permutation smallestRCS, vector<lsquare> &pMOLS){
 			//printPerm( *permIt);
 
 			permuteMOLS(sfMOLS, *permIt, *permIt, tMOLS);
-			permuteSymbols(tMOLS, ttMOLS);
+			//permuteSymbols(tMOLS, ttMOLS);
 
-			if (!comparePartialMOLS(partMOLS, ttMOLS) )// if  part > temp
+			if (!comparePartialMOLS(partMOLS, tMOLS) )// if  part > temp
 			{
 				/*for (i=0; i<k; i++){
 					printPerm(partMOLS[i].front());cout<<" ";}*/
@@ -1475,9 +1475,9 @@ bool MOLS::noSmallerRCS(permutation smallestRCS, vector<lsquare> &pMOLS){
 		for (permIt = allShuffles.begin(); permIt != allShuffles.end(); ++permIt) {
 			vector<lsquare> tMOLS(k, lsquare(n , permutation(n, n))) , ttMOLS(k, lsquare(n , permutation(n, n))) ;
 			permuteMOLS(sfMOLS, *permIt, *permIt, tMOLS);
-			permuteSymbols(tMOLS, ttMOLS);
+			//permuteSymbols(tMOLS, ttMOLS);
 
-			if (!comparePartialMOLS(partMOLS, ttMOLS) )// if  part > temp
+			if (!comparePartialMOLS(partMOLS, tMOLS) )// if  part > temp
 			{
 				/*for (i=0; i<k; i++){
 					printPerm(compMOLS[i].back());cout<<" ";}*/
