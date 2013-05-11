@@ -45,6 +45,9 @@ private:
 	vector<permutation> possibleShuffles;
 	vector<int> currentCS;
 	string filename;
+	list<vector<int> > RCSsquares;
+	list<vector<int> > RCSperms;
+
 
 	int printUniversals(lsquare &l);
 	void printPerm(permutation p);
@@ -57,7 +60,7 @@ private:
 	permutation copyPerm(permutation p);
 	permutation rcs(permutation p1, permutation p2);
 	void permuteSymbols(vector<lsquare> partMOLS , vector<lsquare> &newMOLS );
-	void permuteMOLS(vector<lsquare> partMOLS , permutation rowPerm, permutation colPerm, vector<lsquare> &newMOLS );
+	void permuteMOLS(vector<lsquare> &partMOLS , permutation rowPerm, permutation colPerm  );
 	//void permuteMOLSRCS(vector<lsquare> partMOLS , permutation rowPerm, permutation colPerm, vector<lsquare> newMOLS );
 	//void testpermuteMOLS(vector<lsquare> partMOLS , permutation rowPerm, permutation colPerm, vector<lsquare> newMOLS , vector<lsquare> newpMOLS);
 	void printOA(vector<vector<int> > OA);
@@ -75,8 +78,9 @@ private:
 //	bool  isSmallestPermSymbols(lsquare ls, int nofPerms) ;
 	void  changeOrder(vector<lsquare> partMOLS, vector<int> order , vector<lsquare> &newMOLS) ;
 	void  changeOrder(vector<lsquare> partMOLS, int first, int second , vector<lsquare> &newMOLS) ;
+	void  changeOrder(vector<lsquare> &partMOLS, int first, int second ) ;
 	void  rollUp(vector<lsquare> &partMOLS,  int pos,  permutation origP);
-	void  standardForm(vector<lsquare> partMOLS, int rowUp, int pos ,permutation origP, vector<lsquare> &newMOLS) ;
+	void  standardForm(vector<lsquare> &partMOLS, int rowUp, int pos ,permutation origP ) ;
 	vector<int>  rowMeets(permutation p1, permutation p2) ;
 	int  compareCS(permutation p , vector<int> targetCS) ;
 	list<permutation>  getShuffles(permutation pOrig, permutation pNow) ;
@@ -106,7 +110,7 @@ private:
 	permutation  strtoPerm(string s);
 	void updateLS();
 	permutation flatten(permutation pNow);
-
+	bool getSmallRelCS( vector<lsquare> pMOLS );
 
 
 } ;
@@ -123,6 +127,8 @@ MOLS::MOLS( int n, int k){
  	count_MOLS = 0;
 	branchCount_.resize(n*k, 0);
 	currentCS.resize(n+1, 0);
+	RCSsquares.clear();
+	RCSperms.clear();
 
 	//partMOLS(k, list<permutation>(n, list<int>(n, sizeof(int))));
 	//tempMOLS(k, list<permutation>(n, list<int>(n, sizeof(int))));
@@ -242,6 +248,8 @@ MOLS::MOLS( string filename){
 	count_MOLS = 0;
 	branchCount_.resize(n*k, 0);
 	currentCS.resize(n+1, 0);
+	RCSsquares.clear();
+	RCSperms.clear();
 
 	//Get cycle structure representatives for U_0^1
 	vector<int> cycles(n+1, 0);
@@ -565,11 +573,13 @@ void MOLS::permuteSymbols(vector<lsquare> partMOLS, vector<lsquare> &newMOLS){
 }
 
 
-void MOLS::permuteMOLS(vector<lsquare> pMOLS, permutation rowPerm, permutation colPerm, vector<lsquare> &newMOLS){
+void MOLS::permuteMOLS(vector<lsquare> &pMOLS, permutation rowPerm, permutation colPerm ){
 
+	lsquare emptyLS;
+	vector<lsquare> newMOLS(k, emptyLS);
 	for (unsigned int i=0; i<k; i++	){
 
-		newMOLS[i].clear();
+		//newMOLS[i].clear();
 		//newMOLS[i].resize(n, vector<int>(n, n));
 		if (pMOLS[i].size()>0){ //if the square is not empty (otherwise it cant be permuted)
 			permutation b(n, 0);
@@ -587,6 +597,7 @@ void MOLS::permuteMOLS(vector<lsquare> pMOLS, permutation rowPerm, permutation c
 		}
 		std::sort(newMOLS[i].begin(), newMOLS[i].end(), My::permutationComparator);
 	}
+	pMOLS = newMOLS;
 
 
 //	std::list<int> third (second.begin(),second.end());  // iterating through second
@@ -784,7 +795,7 @@ int x;
 			//printPerm(rowPerm) ;printPerm(colPerm);
 
 			//transposeMOLS<2>(partMOLS, transpMOLS);
-			permuteMOLS(partMOLS, rowPerm, colPerm, newMOLS);
+			permuteMOLS(partMOLS, rowPerm, colPerm);
 			//tempmols has the postpermutation, first make this even smaller by permutin symbols
 
 
@@ -1156,15 +1167,19 @@ void MOLS::changeOrder(vector<lsquare> partMOLS , vector<int> order , vector<lsq
 	}
 }
 
-void MOLS::changeOrder(vector<lsquare> partMOLS , int first, int second , vector<lsquare> &newMOLS){
-	newMOLS[0]=partMOLS[first];
-	newMOLS[1]= partMOLS[second];
-	int i=0;
+void MOLS::changeOrder(vector<lsquare> &pMOLS , int first, int second  ){
+	lsquare emptyLS;
+	vector<lsquare> newMOLS(k, emptyLS);
+	newMOLS[0]=pMOLS[first];
+	newMOLS[1]= pMOLS[second];
+ 	int i=0;
 	int j=2;
 	for (i=0; i<k; i++){
 		if (i!=first && i!=second)
-			 newMOLS[j++]= partMOLS[i];
+			 newMOLS[j++]= pMOLS[i];
 	}
+
+	pMOLS = newMOLS;
 }
 
 void MOLS::rollUp(vector<lsquare> &pMOLS ,  int pos,  permutation origP ){
@@ -1201,9 +1216,10 @@ void MOLS::rollUp(vector<lsquare> &pMOLS ,  int pos,  permutation origP ){
 	return;
 }
 
-void MOLS::standardForm(vector<lsquare> pMOLS , int rowUp, int pos ,permutation origP, vector<lsquare> &newMOLS ){
+void MOLS::standardForm(vector<lsquare> &pMOLS , int rowUp, int pos ,permutation origP){
 	//vector<lsquare> ruMOLS(k, lsquare(n , permutation(n, n))) , sfMOLS(k, lsquare(n , permutation(n, n)))  ;
-	vector<lsquare> ruMOLS(k, lsquare(n , permutation(n, n))) , sfMOLS(k, lsquare(n , permutation(n, n)))  ;
+	//vector<lsquare> ruMOLS(k, lsquare(n , permutation(n, n))) , sfMOLS(k, lsquare(n , permutation(n, n)))  ;
+
 	rollUp(pMOLS, pos, origP);
 	/*cout<<"after rollup2";
 	printMOLSPerms(pMOLS);*/
@@ -1234,7 +1250,7 @@ void MOLS::standardForm(vector<lsquare> pMOLS , int rowUp, int pos ,permutation 
 
  		permuteMOLS(pMOLS, p,id,  newMOLS);
 	}*/
-	permuteMOLS(pMOLS, p,id,  newMOLS);
+	permuteMOLS(pMOLS, p,id);
 
 }
 
@@ -1317,7 +1333,9 @@ list<vector<int> > MOLS::getSmallRelCS( vector<lsquare> pMOLS, list<permutation>
 					//if this rcs is equal to smallest store in list
 					//if (!lexicographical_compare(rcsV.begin(), rcsV.end(), targetRCS.begin(), targetRCS.end())
 					//		and !lexicographical_compare(targetRCS.begin(), targetRCS.end(), rcsV.begin(), rcsV.end())){
-					if (compareCS(rcsV, currentCS)==0){
+					int comparison = compareCS(rcsV, currentCS);
+
+					if (comparison==0){
 					// if (true){
 						vector<int> data ;
 						data.assign(4, 0);
@@ -1327,17 +1345,91 @@ list<vector<int> > MOLS::getSmallRelCS( vector<lsquare> pMOLS, list<permutation>
 						data[2] = dataPos[0];
 						data[3] = dataPos[1];
 						//if (!(data[0]==0&&data[1]==1&&data[2]==0) ){
-							listP.push_back(pMOLS[i][ii]);
-							//cout<<  data[0]<<" "<<data[1]<<" "<<data[2]<<" "<<data[3]<< " perm "; printPerm(*permIt1);cout<<", "; printPerm(*permIt2); cout<<endl;
-							squares.push_back(data);
-						//}
+						listP.push_back(pMOLS[i][ii]);
+						//cout<<  data[0]<<" "<<data[1]<<" "<<data[2]<<" "<<data[3]<< " perm "; printPerm(*permIt1);cout<<", "; printPerm(*permIt2); cout<<endl;
+						squares.push_back(data);
+
+						//and in reverse
+						vector<int> data1 ;
+						data1.assign(4, 0);
+						data1[0]=j;
+						data1[1] =i;
+						vector<int> dataPos1 = rowMeets(pMOLS[j][jj],pMOLS[i][ii]);
+						data1[2] = dataPos1[0];
+						data1[3] = dataPos1[1];
+						// if (!(data1[0]==0&&data1[1]==1&&data1[2]==0) ){
+						listP.push_back(pMOLS[j][jj]);
+						//cout<<  data1[0]<<" "<<data1[1]<<" "<<data1[2]<<" "<<data1[3]<< " perm "; printPerm(*permIt2);cout<<", "; printPerm(*permIt1); cout<<endl;
+
+						squares.push_back(data1);
+
 					}
 
-					//and in reverse
-					rcsV = rcs(pMOLS[j][jj],pMOLS[i][ii]);
+
+
+				}
+			}
+
+
+		}
+	}
+ }
+
+bool MOLS::getSmallRelCS( vector<lsquare> pMOLS ){
+ 	permutation targetRCS = copyPerm(pMOLS[1].front());
+	RCSperms.clear();RCSsquares.clear();
+	int i,j;
+
+	//list<vector<int> > squares;
+ 	list<permutation>::iterator permIt1;
+	list<permutation>::iterator permIt2;
+
+ 	for(i=0; i<k-1; i++){
+		for(j=i+1; j<k; j++){
+
+		 	for (unsigned int ii=0; ii< pMOLS[i].size(); ii++){
+				for (unsigned int jj=0; jj< pMOLS[j].size(); jj++){
+
+					permutation rcsV = rcs(pMOLS[i][ii], pMOLS[j][jj]);
+
 					//if this rcs is equal to smallest store in list
 					//if (!lexicographical_compare(rcsV.begin(), rcsV.end(), targetRCS.begin(), targetRCS.end())
 					//		and !lexicographical_compare(targetRCS.begin(), targetRCS.end(), rcsV.begin(), rcsV.end())){
+					int comparison = compareCS(rcsV, currentCS);
+					if (comparison<0){
+ 						return false;
+					}
+					if (comparison==0){
+					// if (true){
+						vector<int> data ;
+						data.assign(4, 0);
+						data[0]=i;
+						data[1] =j;
+						vector<int> dataPos = rowMeets(pMOLS[i][ii], pMOLS[j][jj]);
+						data[2] = dataPos[0];
+						data[3] = dataPos[1];
+						//if (!(data[0]==0&&data[1]==1&&data[2]==0) ){
+						RCSperms.push_back(pMOLS[i][ii]);
+						//cout<<  data[0]<<" "<<data[1]<<" "<<data[2]<<" "<<data[3]<< " perm "; printPerm(*permIt1);cout<<", "; printPerm(*permIt2); cout<<endl;
+						RCSsquares.push_back(data);
+
+						//and in reverse
+						vector<int> data1 ;
+						data1.assign(4, 0);
+						data1[0]=j;
+						data1[1] =i;
+						vector<int> dataPos1 = rowMeets(pMOLS[j][jj],pMOLS[i][ii]);
+						data1[2] = dataPos1[0];
+						data1[3] = dataPos1[1];
+						// if (!(data1[0]==0&&data1[1]==1&&data1[2]==0) ){
+						RCSperms.push_back(pMOLS[j][jj]);
+						//cout<<  data1[0]<<" "<<data1[1]<<" "<<data1[2]<<" "<<data1[3]<< " perm "; printPerm(*permIt2);cout<<", "; printPerm(*permIt1); cout<<endl;
+
+						RCSsquares.push_back(data1);
+					}
+
+					/*rcsV = rcs(pMOLS[j][jj],pMOLS[i][ii]);
+
 					if (compareCS(rcsV, currentCS)==0){
 					// if(true){
 						vector<int> data1 ;
@@ -1353,64 +1445,15 @@ list<vector<int> > MOLS::getSmallRelCS( vector<lsquare> pMOLS, list<permutation>
 
 							squares.push_back(data1);
 						// }
-					}
-
+					}*/
 				}
 			}
-
-
 		}
 	}
-	return squares;
+ 	return true;
 }
 
 permutation MOLS::flatten(permutation pNow){
-
-	/*vector<bool> visited (n+1, false);
-		permutation::const_iterator permIt;
-		vector<int> permArr(n+1, 0);
-		//int permArr[n]={0};
-		int i=0;
-
-		for (i=0; i<n; i++){
-			//cout<<i<<endl;
-			if (i==p[i]){
-				nofCycles[1]++;
-				vector<int> thisCycle;
-				thisCycle.push_back(i);
-				cycleLength_cycles_map[thisCycle.size()].front().ipush_back(thisCycle);
-			}
-			else
-			{
-				if (!visited[i]){
-					vector<int> thisCycle;
-					int j=i+0;
-					do{
-						thisCycle.push_back(j);
-						visited[j] = true;
-						j = p[j];
-					}while (thisCycle.front() !=j);
-
-					nofCycles[thisCycle.size()]++;
-					cycleLength_cycles_map[thisCycle.size()].push_back(thisCycle);
-				}
-			}
-		}
-
-		permutation z;
-		for (unsigned int i=0; i<n; i++){
-		 		if (!visited[i]){
-					//bcout<<i<<endl;
-		 			j=i;
-				do{
-
-					visited[j] = true;
-					//cout<<"push "<<pNow[j]<<endl;
-					z.push_back(pNow[j]);
-					j = pNow[j];
-				}while (!visited[j]);
-				}
-			}*/
 
 	//cout<<" Flatten in - "; printPerm(pNow);cout.flush();
 	vector<bool> visited (n+1, false);
@@ -1463,8 +1506,13 @@ list<permutation> MOLS::getShuffles(permutation pOrig, permutation pNow){
 	 for (pi=possibleShuffles.begin(); pi!=possibleShuffles.end(); ++pi){
 		// listtemp.push_back( composition(pOrig,inverse(*pi)));
 		  //listtemp.push_back( rcs( pNow,*pi));
+		 permutation z(n,0);
+		 for (unsigned int i=0; i<n; i++){
+			 z[f[(*pi)[i]]] =i;
+		 }
+		  //listtemp.push_back( inverse(composition(f, *pi)));
+		 listtemp.push_back( z);
 
-		  listtemp.push_back( composition(inverse(*pi), inverse(f)));
 		//printPerm(*pi); cout<<" | "; printPerm(composition(pOrig,inverse(*pi))) ;cout<<endl;
 		//;cout<<" | ";printPerm(composition(inverse(*pi), pOrig)) ;cout<<" | ";printPerm(composition( pOrig,inverse(*pi))) ;cout<<endl;
 	}
@@ -1474,53 +1522,48 @@ list<permutation> MOLS::getShuffles(permutation pOrig, permutation pNow){
 
 bool MOLS::noSmallerRCS(permutation smallestRCS, vector<lsquare> &pMOLS){
 
-	//permutation targetP =copyPerm(partMOLS[1].front());
-	//permutation smallestRCS = partMOLS[1].front();
-
-	list<permutation> listPerms;
-	//so relCS has the data about where the relative cs are, and listperms the actual permutation in the square going first
-	list <vector<int> > relCS = getSmallRelCS(pMOLS, listPerms);
-	list< vector<int> >::const_iterator testRel;
+	//so RCSsquares has the data about where the relative cs are, and RCSperms the actual permutation in the square going first
+ 	list< vector<int> >::const_iterator testRel;
 	list< permutation >::iterator testPermsit;
-	testPermsit= listPerms.begin();
+	testPermsit= RCSperms.begin();
 
 	list<permutation>::iterator permIt;int i;
 
 	/*cout<<"Testing nosmallerrcs"<<endl;
 	for (i=0; i<k; i++){
 			printPerm(partMOLS[i].back());cout<<" ";}*/
-	for (testRel=relCS.begin(); testRel!=relCS.end(); testRel++){
+	for (testRel=RCSsquares.begin(); testRel!=RCSsquares.end(); testRel++){
 		// cout<<endl<<" "<<(*testRel)[0]<<" "<<(*testRel)[1]<<" "<<(*testRel)[2]<<" "<<(*testRel)[3] <<" ";
-		vector<lsquare> roMOLS(k, lsquare(n , permutation(n, n)));
-		vector<lsquare> sfMOLS(k, lsquare(n , permutation(n, n)));
-/*		cout<<"Before";
+		vector<lsquare> roMOLS(pMOLS);
+		/*cout<<"Before";
 		printMOLS(partMOLS );
-		printMOLSPerms(partMOLS );*/
+		printMOLSPerms(roMOLS );*/
 
-		changeOrder(pMOLS, (*testRel)[0],(*testRel)[1], roMOLS);
-
+		//changeOrder(pMOLS, (*testRel)[0],(*testRel)[1], roMOLS);
+		changeOrder(roMOLS, (*testRel)[0],(*testRel)[1]);
 		/*cout<<"Order changed";
 		//printMOLS(roMOLS);
 		printMOLSPerms(roMOLS);*/
 
-		standardForm(roMOLS, (*testRel)[2],(*testRel)[3], *testPermsit, sfMOLS);
+		standardForm(roMOLS, (*testRel)[2],(*testRel)[3], *testPermsit);
 
-/*		cout<<"STD Form - "<<sfMOLS[0].size();
-		printMOLSPerms(sfMOLS);cout.flush();*/
+		/*cout<<"STD Form - ";
+		printMOLSPerms(roMOLS);cout.flush();*/
 
-		permutation currPerm = sfMOLS[1].front();
+		permutation currPerm = roMOLS[1].front();
 		//printPerm(currPerm);
-		list<permutation> allShuffles = getShuffles(   smallestRCS,sfMOLS[1].front());
+		list<permutation> allShuffles = getShuffles(   smallestRCS, roMOLS[1].front());
 
 		// printPerm(rcs2);
 		//cout << endl<<" Test shuffles"<<endl;
 		for (permIt = allShuffles.begin(); permIt != allShuffles.end(); ++permIt) {
-			vector<lsquare> tMOLS(k, lsquare(n , permutation(n, n))), ttMOLS(k, lsquare(n , permutation(n, n)));
+			vector<lsquare> tMOLS(roMOLS);
 			//permutation realShuffle = composition(inverse( *permIt),targetP );
 			//printPerm( *permIt);
 
-			permuteMOLS(sfMOLS, *permIt, *permIt, tMOLS);
+			permuteMOLS(tMOLS, *permIt, *permIt);
 			//permuteSymbols(tMOLS, ttMOLS);
+			/*b*/
 
 			if (!comparePartialMOLS(partMOLS, tMOLS) )// if  part > temp
 			{
@@ -1544,37 +1587,37 @@ bool MOLS::noSmallerRCS(permutation smallestRCS, vector<lsquare> &pMOLS){
 	//TRANSPOSES??
 	vector<lsquare> transpMOLS(k, lsquare(n , permutation(n, n)));
 	transposeMOLS(pMOLS, transpMOLS);
-	list<permutation> listPerms1;
-	list <vector<int> > relCS1 = getSmallRelCS(transpMOLS, listPerms1);
+	//list<permutation> listPerms1;
+	//list <vector<int> > relCS1 = getSmallRelCS(transpMOLS, listPerms1);
 	list< vector<int> >::const_iterator testRel1;
 	list< permutation >::iterator testPermsit1;
-	testPermsit1= listPerms1.begin();
+	testPermsit1= RCSperms.begin();
 	//list<permutation>::iterator permIt;int i;
 
-	for (testRel1=relCS1.begin(); testRel1!=relCS1.end(); testRel1++){
-		vector<lsquare> roMOLS(k, lsquare(n , permutation(n, n))), sfMOLS(k, lsquare(n , permutation(n, n)));
+	for (testRel1=RCSsquares.begin(); testRel1!=RCSsquares.end(); testRel1++){
+		vector<lsquare> roMOLS(transpMOLS);
 
-		changeOrder(transpMOLS, (*testRel1)[0],(*testRel1)[1], roMOLS);
-		standardForm(roMOLS, (*testRel1)[2],(*testRel1)[3], *testPermsit1, sfMOLS);
+		changeOrder(roMOLS, (*testRel1)[0],(*testRel1)[1]);
+		standardForm(roMOLS, (*testRel1)[3],(*testRel1)[2], inverse(*testPermsit1));
 
-		permutation currPerm = sfMOLS[1].front();
+		permutation currPerm = roMOLS[1].front();
 		list<permutation> allShuffles = getShuffles(smallestRCS,currPerm  );
 
 		for (permIt = allShuffles.begin(); permIt != allShuffles.end(); ++permIt) {
-			vector<lsquare> tMOLS(k, lsquare(n , permutation(n, n))) , ttMOLS(k, lsquare(n , permutation(n, n))) ;
-			permuteMOLS(sfMOLS, *permIt, *permIt, tMOLS);
+			vector<lsquare> tMOLS(roMOLS) ;
+			permuteMOLS(tMOLS, *permIt, *permIt );
 			//permuteSymbols(tMOLS, ttMOLS);
 
 			if (!comparePartialMOLS(partMOLS, tMOLS) )// if  part > temp
 			{
 				/*for (i=0; i<k; i++){
-					printPerm(compMOLS[i].back());cout<<" ";}*/
-
+					printPerm(compMOLS[i].back());cout<<" ";}
+*/
 				//cout<< "Initial";printMOLSPerms(compMOLS, k);
 				//cout<< "New after transpose";
 				//printMOLSPerms(tMOLS, k);
-				/*cout<<"***********************"<<endl;
-*/
+				//cout<<"***********************"<<endl;
+
 				//cout<< "rel CS smaller after transpose.."<< (*testRel1)[0]<<" "<<(*testRel1)[1]<<" "<<(*testRel1)[2]<<" "<<(*testRel1)[3]<< " perm "; printPerm(*permIt);cout<<endl;
 								//printMOLS(tMOLS, k);
 				return false;
@@ -2106,22 +2149,24 @@ void MOLS::findMOLS4(){
 						if (checkFit(P)){
 							if (checkOrthogonal(P)){
 								//printDots(currSquare, partMOLS[currSquare].size(), k); printPerm(P);
-								if (checkRCS(P)){
+
 									addUniversal(P);
 									//partMOLS[currSquare].push_back(P);
 
-									//if (currSquare==k-1){
-									if (isSmallest4(true)){
+
+									if (getSmallRelCS(partMOLS)){
+										if (isSmallest4(true)){
 
 										currSquare = (currSquare+1)%k;
 										findMOLS4( );
 										currSquare = (currSquare-1+k)%k;
 									}
+									}
 									removeUniversal(P);
 									//partMOLS[currSquare].pop_back();
 
 
-								}
+
 								/*else{
 
 									for (i=0; i<currSquare; i++){
@@ -2168,21 +2213,22 @@ void MOLS::findMOLS4(){
 			//	cout<<"startchecks"<<endl	;
 				if (checkOrthogonal((*possPermIt))){
 					//printDots(currSquare, partMOLS[currSquare].size(), k);  printPerm((*possPermIt));
-					if (checkRCS( (*possPermIt))){
+					//if (checkRCS( (*possPermIt))){
 						//cout<< "adding ";printPerm(*possPermIt); cout<<endl;
 						addUniversal(*possPermIt);
 						//partMOLS[currSquare].push_back(P);
-
-						if (isSmallest4()){
-							//cout<< "is smallest"; cout<<endl;
-							currSquare = (currSquare+1)%k;
-							findMOLS4( );
-							currSquare = (currSquare-1+k)%k;
+						if (getSmallRelCS(partMOLS)){
+							if (isSmallest4()){
+								//cout<< "is smallest"; cout<<endl;
+								currSquare = (currSquare+1)%k;
+								findMOLS4( );
+								currSquare = (currSquare-1+k)%k;
+							}
 						}
 
 						removeUniversal(*possPermIt);
 						//partMOLS[currSquare].pop_back();
-					}
+					//}
 				/*	else{
 
 												for (i=0; i<currSquare; i++){
@@ -2231,7 +2277,7 @@ void MOLS::printAllStatics(){
 
 int main(int argc,char *argv[])
 {
-	 MOLS threemols(6,3);
+	 MOLS threemols(7,3);
 	string filename = argv[1];
 
 	/*string outfile = "out.txt";//+filename;
