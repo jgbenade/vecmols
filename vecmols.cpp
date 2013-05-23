@@ -1816,7 +1816,7 @@ bool MOLS::noSmallerRCS(permutation &smallestRCS){
 
 bool MOLS::isSmallest4( ){
 
-//if (currSquare == k-1	)
+if (currSquare == k-1	)
 	if (!noSmallerRCS( partMOLS[1].front() )){
 		/*for (i=0; i<k; i++)
 				printPerm(partMOLS[i].back());
@@ -1832,7 +1832,7 @@ bool MOLS::isSmallest4(bool t ){
 	/*if (partMOLS[currSquare].size()>2)
 		return true;*/
 
-	//if (currSquare == k-1	)
+	if (currSquare == k-1	)
 		if (!noSmallerRCS( partMOLS[1].front() )){
 		/*for (i=0; i<k; i++)
 				printPerm(partMOLS[i].back());
