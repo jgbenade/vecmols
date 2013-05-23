@@ -26,7 +26,7 @@ public:
 	void  printAllStatics();
 	struct My
 	{
-	    static bool permutationComparator    (permutation p1, permutation    p2);
+	    static bool permutationComparator (permutation p1, permutation    p2);
 	};
 
 private:
@@ -105,7 +105,9 @@ private:
 	void addUniversal(permutation &p	);
 	void removeFromLS(permutation p);
 	void addToLS();
-	void generatePossiblePermsLSRec(permutation p, int row,  list<permutation> &possiblePermList );
+	void generatePossiblePermsLSRec(permutation &p, int row,  list<permutation> &possiblePermList, vector<bool> &left );
+	void  generatePossiblePermsToInsert2(  list<permutation> &possiblePermList ) ;
+	void generatePossiblePermsLSRec2(permutation &p, int row,  list<permutation> &possiblePermList, vector<vector<int> > &poss, vector<bool> &left );
 	std::vector<std::string> & split(const std::string &s, char delim, std::vector<std::string> &elems);
 	std::vector<std::string>   split(const std::string &s, char delim );
 	permutation  strtoPerm(string s);
@@ -113,11 +115,13 @@ private:
 	permutation flatten(permutation &pNow);
 	bool getSmallRelCS( vector<lsquare>& pMOLS );
 	bool rcsOrthog(permutation p1, permutation p2);
-
+	static bool permutationComp (permutation p1, permutation    p2);
 
 } ;
 
-bool MOLS::My::permutationComparator    (permutation p1, permutation    p2) { return p1.front() < p2.front(); }
+inline bool MOLS::My::permutationComparator    (permutation p1, permutation    p2) { return p1[0] < p2[0]; }
+
+inline bool MOLS::permutationComp    (permutation p1, permutation    p2) { return p1[0] < p2[0]; }
 
 MOLS::~MOLS(){}
 
@@ -286,9 +290,7 @@ void MOLS::updateLS(){
  		//		for(universalIt=partMOLS[i].begin(); universalIt != partMOLS[i].end(); ++universalIt){
 		for(unsigned int j =0; j< partMOLS[i].size(); j++){
 			for(unsigned int jj= 0; jj< partMOLS[i][j].size(); jj++){//(partMOLS[i][j]).begin(); perm_it != (partMOLS[i][j]).end(); ++perm_it){
-
 				currLS[i][jj][partMOLS[i][j][jj]] = j;
-
 			}
 
 		}
@@ -517,7 +519,7 @@ void MOLS::printMOLS( vector<lsquare> mols  ){
 permutation MOLS::composition(permutation &p1, permutation &p2){
 	// cout<< "Enter composite"<<endl;
 
-	permutation composite(p1.size(),0) ; //= {0,0,0,0};
+	permutation composite(p1.size()) ; //= {0,0,0,0};
 	for(unsigned int i =0; i< n; i++)
 			 composite[i] = p1[p2[i]];
 
@@ -526,7 +528,7 @@ permutation MOLS::composition(permutation &p1, permutation &p2){
 
 permutation MOLS::inverse(permutation &p){
 	// cout<< "Enter inverse"<<endl;
- 	permutation inverse(p.size(),0) ;
+ 	permutation inverse(p.size()) ;
 
 	for (unsigned int i=0; i<p.size(); i++){
 		inverse[p[i]] = i;
@@ -534,11 +536,7 @@ permutation MOLS::inverse(permutation &p){
 	return inverse;
 }
 permutation MOLS::copyPerm(permutation p){
-	permutation pNew(p.size(), 0) ;
-	for (unsigned int i=0; i<p.size(); i++){
-			pNew[i] = p[i];
-		}
-
+	permutation pNew(p) ;
 	return pNew;
 }
 
@@ -579,19 +577,19 @@ void MOLS::permuteSymbols(vector<lsquare> &partMOLS, vector<lsquare> &newMOLS){
 // 1 = 2 - TRUE
 // 1 > 2 - FALSE
 bool MOLS::testPermuteMOLS(vector<lsquare> &pMOLS, permutation &rowPerm, permutation &colPerm ){
-	//cout<<endl<< "enter testMOLS: RowPerm "; printPerm(rowPerm); cout<<", colPerm "; printPerm(colPerm); cout<<endl;
-	//cout<<"Original" ;printMOLSPerms(partMOLS); cout<<"Received";printMOLSPerms(pMOLS);
-	//vector<lsquare> newMOLS(pMOLS); permuteMOLS(newMOLS, rowPerm, colPerm);
-	//cout<<"Permuted";printMOLSPerms(newMOLS);
+	/*cout<<endl<< "enter testMOLS: RowPerm "; printPerm(rowPerm); cout<<", colPerm "; printPerm(colPerm); cout<<endl;
+	cout<<"Original" ;printMOLSPerms(partMOLS); cout<<"Received";printMOLSPerms(pMOLS);
+	vector<lsquare> newOLS(pMOLS); permuteMOLS(newMOLS, rowPerm, colPerm);
+	cout<<"Permuted";printMOLSPerms(newMOLS);
 
-	//lsquare emptyLS;
-	//vector<lsquare> newMOLS(k, emptyLS);
+	lsquare emptyLS;
+	vector<lsquare> newMOLS(k, emptyLS);*/
 
 	vector<int> permIt1(k,0);//arrays of iterators
-	vector<int> sizes(k, 0);
+	vector<int> sizes(k);
 	permIt1[0]++;
 
-	int cs = 0;  //the number of the square currently being compared.
+	unsigned int cs = 0;  //the number of the square currently being compared.
 	for (cs =0; cs<k; cs++){
 		sizes[cs] = pMOLS[cs].size();
 	}
@@ -607,12 +605,15 @@ bool MOLS::testPermuteMOLS(vector<lsquare> &pMOLS, permutation &rowPerm, permuta
 	}
 	unsigned int  ci=0;
 	int diff;
+	permutation z(n);
+//	permutation z1(n, 0);
+	permutation diffs(n);//permutation diffs1(n, 0);
 	for (cs = 1%k; true; cs=(cs+1)%k){//this goes on forever, break on when iterato reaches end
 
 		if (permIt1[cs] == partMOLS[cs].size() || permIt1[cs] == pMOLS[cs].size())
 			return true;
 
-		ci=0;
+		ci=0; //TODO dalk . tipe sort hier? nlogn ipv n^2
 		while(ci<sizes[cs]){
 			if (colPerm[pMOLS[cs][ci][indOfOne]]==permIt1[cs]){
 				//cout<< "ci = "<< ci;
@@ -621,8 +622,10 @@ bool MOLS::testPermuteMOLS(vector<lsquare> &pMOLS, permutation &rowPerm, permuta
 		}
 
 		if (ci< sizes[cs]){ //so weve found the one that gets a whatever in the first position
-			permutation z(n, 0);
-			permutation diffs(n, 0);
+			//permutation z(n, 0);
+			//z.resize(n);
+			//diffs.resize(n);
+
 			for (unsigned int  jj=0; jj<n; jj++){
 				diffs[rowPerm[jj]] = partMOLS[cs][permIt1[cs]][ rowPerm[jj]] - colPerm[pMOLS[cs][ci][jj]];
 				//z[ rowPerm[jj] ] = colPerm[pMOLS[cs][ci][jj]];
@@ -649,29 +652,21 @@ bool MOLS::testPermuteMOLS(vector<lsquare> &pMOLS, permutation &rowPerm, permuta
 	return true;
 }
 
+//permutes i
 void MOLS::permuteMOLS(vector<lsquare> &pMOLS, permutation &rowPerm, permutation &colPerm ){
+	permutation z(n);
+	vector<lsquare> newMOLS(k);
 
-	lsquare emptyLS;
-	vector<lsquare> newMOLS(k, emptyLS);
 	for (unsigned int i=0; i<k; i++	){
-
-		//newMOLS[i].clear();
-		//newMOLS[i].resize(n, vector<int>(n, n));
-		if (pMOLS[i].size()>0){ //if the square is not empty (otherwise it cant be permuted)
-			permutation b(n, 0);
+ 		if (pMOLS[i].size()>0){ //if the square is not empty (otherwise it cant be permuted)
  			unsigned int sz = pMOLS[i].size();
 			for (unsigned int j=0; j<sz; j++){
-
-				permutation z(n, 0);
 				for (unsigned int  jj=0; jj<n; jj++)
 					z[ rowPerm[jj] ] = colPerm[pMOLS[i][j][jj]];
 				newMOLS[i].push_back(z);
-
-				//newMOLS[i].push_back(composition(composition(colPerm, pMOLS[i][j]), inverse(rowPerm) ));
-			}
-			//for(unsigned int j= pMOLS[i].size();j<n; j++) newMOLS[i][j]= new vector<int>;
-		}
-		std::sort(newMOLS[i].begin(), newMOLS[i].end(), My::permutationComparator);
+ 			}
+ 		}
+		std::sort(newMOLS[i].begin(), newMOLS[i].end(), My::permutationComparator );
 	}
 	pMOLS= newMOLS;
 
@@ -991,11 +986,10 @@ int x;
 
 
 vector<lsquare>  MOLS::transposeMOLS(vector<lsquare> &partMOLS){
-	int i;
-	lsquare emptyLS;
-	vector<lsquare> newMOLS(k, emptyLS);
 
-	for (i =0;i<k;i++){
+	vector<lsquare> newMOLS(k);
+
+	for (unsigned int i =0;i<k;i++){
 		//newMOLS[i].clear();
 		lsquare::iterator permIt ;
 		permutation::iterator universalIt;
@@ -1006,8 +1000,8 @@ vector<lsquare>  MOLS::transposeMOLS(vector<lsquare> &partMOLS){
 			for (universalIt = (*permIt).begin(); universalIt != (*permIt).end(); ++universalIt){
 				arr[*universalIt] = j++;
 			}*/
-			permutation p = inverse(*permIt);// (arr, arr + sizeof(arr) / sizeof(int) );
-			newMOLS[i].push_back(p);
+	//permutation p = inverse(*permIt);// (arr, arr + sizeof(arr) / sizeof(int) );
+			newMOLS[i].push_back(inverse(*permIt));
 		}
 	}
 	return newMOLS;
@@ -1016,10 +1010,10 @@ vector<lsquare>  MOLS::transposeMOLS(vector<lsquare> &partMOLS){
 
 
 permutation MOLS::CSToPerm(vector<int> curr ){
-	int i,j, currCycleLen;
+	int i,j, currCycleLen, ind=0;
 	int ctr =0;
 	int cycleStart;
-	permutation p;
+	permutation p(n) ;
 
 	for (i=0; i<n+1; i++){
 		int j=curr[i]; //j = number of cycles of length i
@@ -1029,7 +1023,8 @@ permutation MOLS::CSToPerm(vector<int> curr ){
 			cycleStart = ctr;
 
 			while (currCycleLen>0){ //while we are still in this cycle
-				p.push_back((currCycleLen==1? cycleStart: ctr+1	 ));
+				//p.push_back((currCycleLen==1? cycleStart: ctr+1	 ));
+				 p[ind++] = ((currCycleLen==1? cycleStart: ctr+1	 ));
 				currCycleLen--;
 				ctr++;
 			}
@@ -1179,6 +1174,7 @@ vector<permutation> MOLS::genRelevantPermutations(permutation &p){
  					for (permIt = (*cycleIt).begin(); a<length; ++permIt){
 						std::rotate((*cycleIt).begin(), permIt, (*cycleIt).end()) ;
 						// printPerm(*cycleIt);
+
 						arrPossibilities[ind].push_back(copyPerm(*cycleIt)			);
 						if (a++>0)
 							--permIt;
@@ -1228,7 +1224,7 @@ vector<permutation> MOLS::genRelevantPermutations(permutation &p){
  							for (partialpermIt = templ.begin(); partialpermIt != templ.end(); ++partialpermIt){
 
 								for (cycleIt = arrPossibilities[orderOfCycle[ind]].begin(); cycleIt != arrPossibilities[orderOfCycle[ind]].end(); ++cycleIt){
-									permutation a = copyPerm(*partialpermIt);
+									permutation a(*partialpermIt);
 								 	a.insert(a.end(), (*cycleIt).begin(), (*cycleIt).end());
 									templ2.push_back(a);
  								}
@@ -1304,7 +1300,7 @@ vector<permutation> MOLS::genRelevantPermutations(permutation &p){
 		for (partialpermIt = result.begin(); partialpermIt != result.end(); ++partialpermIt){
 
 			for (cycleIt = arrPossPerLength[ind].begin(); cycleIt != arrPossPerLength[ind].end(); ++cycleIt){
-				permutation a = copyPerm(*partialpermIt);
+				permutation a(*partialpermIt);
 				a.insert(a.end(), (*cycleIt).begin(), (*cycleIt).end());
 				temp.push_back(a);
 				//printPerm(a);
@@ -1379,28 +1375,30 @@ void MOLS::standardForm(vector<lsquare> &pMOLS , int rowUp, int pos ,permutation
 	/*cout<<"after rollup2";
 	printMOLSPerms(pMOLS);*/
 	int i;
-	permutation id;
+	permutation id(n);
 	for (i=0;i<n;i++){
 			//arrPerm[i]= (rowUp+i+n)%n;
-			id.push_back(i);
+			id[i] = i;
 		}
 
-	permutation p ;
-	permutation::iterator permIt;
+	permutation p(n) ;
+	//permutation::iterator permIt;
 	//for (permIt = ruMOLS[0].front().begin(); permIt!=( ruMOLS[0].front()).end(); ++permIt){
-	for (permIt = origP.begin(); permIt!=(origP).end(); ++permIt){
+	/*for (permIt = origP.begin(); permIt!=(origP).end(); ++permIt){
 		p.push_back((*permIt-pos+n)%n);
-	}
+	}*/
+	for (unsigned int j=0; j<n; j++)
+		p[j] = (origP[j]-pos+n)%n;
 
+	//TODO maybe unify this with testpermute
 	permuteMOLS(pMOLS, p,id);
 
 }
 
 vector<int> MOLS::rowMeets(permutation &p1, permutation &p2){
 
- 	vector<int>	res;
-	res.assign(2,0);
-	for (unsigned int i=0; i<p1.size(); i++) {
+ 	vector<int>	res(2);
+ 	for (unsigned int i=0; i<p1.size(); i++) {
 		if (p1[i]==p2[i]){
 			res[0] = i; //row
 			res[1] = p1[i];
@@ -1448,7 +1446,7 @@ int MOLS::compareCS(permutation &p , vector<int>	 &targetCS){
 }
 
 list<vector<int> > MOLS::getSmallRelCS( vector<lsquare> &pMOLS, list<permutation> &listP){
-	permutation targetRCS = copyPerm(pMOLS[1].front());
+	permutation targetRCS(pMOLS[1].front());
 
 	int i,j;
 
@@ -1459,7 +1457,9 @@ list<vector<int> > MOLS::getSmallRelCS( vector<lsquare> &pMOLS, list<permutation
 	list<vector<int> > squares;
  	list<permutation>::iterator permIt1;
 	list<permutation>::iterator permIt2;
-
+	vector<int> data(4) ;
+	vector<int> data1(4) ;
+	vector<int> dataPos(2);
  	for(i=0; i<k-1; i++){
 		for(j=i+1; j<k; j++){
 
@@ -1475,11 +1475,11 @@ list<vector<int> > MOLS::getSmallRelCS( vector<lsquare> &pMOLS, list<permutation
 
 					if (comparison==0){
 					// if (true){
-						vector<int> data ;
-						data.assign(4, 0);
+
+						//data.assign(4);
 						data[0]=i;
 						data[1] =j;
-						vector<int> dataPos = rowMeets(pMOLS[i][ii], pMOLS[j][jj]);
+						dataPos = rowMeets(pMOLS[i][ii], pMOLS[j][jj]);
 						data[2] = dataPos[0];
 						data[3] = dataPos[1];
 						//if (!(data[0]==0&&data[1]==1&&data[2]==0) ){
@@ -1487,19 +1487,17 @@ list<vector<int> > MOLS::getSmallRelCS( vector<lsquare> &pMOLS, list<permutation
 						//cout<<  data[0]<<" "<<data[1]<<" "<<data[2]<<" "<<data[3]<< " perm "; printPerm(*permIt1);cout<<", "; printPerm(*permIt2); cout<<endl;
 						squares.push_back(data);
 
-						//and in reverse
-						vector<int> data1 ;
-						data1.assign(4, 0);
-						data1[0]=j;
-						data1[1] =i;
-						vector<int> dataPos1 = rowMeets(pMOLS[j][jj],pMOLS[i][ii]);
-						data1[2] = dataPos1[0];
-						data1[3] = dataPos1[1];
+						 //and in reverse
+						data[0]=j;
+						data[1] =i;
+						dataPos = rowMeets(pMOLS[j][jj],pMOLS[i][ii]);
+						data[2] = dataPos[0];
+						data[3] = dataPos[1];
 						// if (!(data1[0]==0&&data1[1]==1&&data1[2]==0) ){
 						listP.push_back(pMOLS[j][jj]);
 						//cout<<  data1[0]<<" "<<data1[1]<<" "<<data1[2]<<" "<<data1[3]<< " perm "; printPerm(*permIt2);cout<<", "; printPerm(*permIt1); cout<<endl;
 
-						squares.push_back(data1);
+						squares.push_back(data);
 
 					}
 
@@ -1514,7 +1512,7 @@ list<vector<int> > MOLS::getSmallRelCS( vector<lsquare> &pMOLS, list<permutation
  }
 
 bool MOLS::getSmallRelCS( vector<lsquare>& pMOLS ){
- 	permutation targetRCS = copyPerm(pMOLS[1].front());
+ 	permutation targetRCS(pMOLS[1].front());
 	RCSperms.clear();
 	RCSsquares.clear();
 	int i,j;
@@ -1525,8 +1523,10 @@ bool MOLS::getSmallRelCS( vector<lsquare>& pMOLS ){
 
 	vector<int> pfake;
 
- 	vector<vector<vector<vector<int> > > >   tempPerms(k, vector<vector<vector<int> > >(k, vector<vector<int> >(0, pfake) ));
-	vector<vector<vector<vector<int> > > >  tempSquares(k, vector<vector<vector<int> > >(k, vector<vector<int> >(0, pfake) ));
+ 	vector<vector<vector<vector<int> > > >  tempPerms(k, vector<vector<vector<int> > >(k  ));
+	vector<vector<vector<vector<int> > > >  tempSquares(k, vector<vector<vector<int> > >(k  ));
+	vector<int> data(4) ;
+	vector<int> dataPos(2);
 
  	for(i=0; i<k-1; i++){
 		for(j=i+1; j<k; j++){
@@ -1546,11 +1546,10 @@ bool MOLS::getSmallRelCS( vector<lsquare>& pMOLS ){
 					}
 					if (comparison==0){
 					// if (true){
-						vector<int> data ;
-						data.assign(4, 0);
+
 						data[0]=i;
 						data[1] =j;
-						vector<int> dataPos = rowMeets(pMOLS[i][ii], pMOLS[j][jj]);
+					    dataPos = rowMeets(pMOLS[i][ii], pMOLS[j][jj]);
 						data[2] = dataPos[0];
 						data[3] = dataPos[1];
 						//if (!(data[0]==0&&data[1]==1&&data[2]==0) ){
@@ -1561,21 +1560,20 @@ bool MOLS::getSmallRelCS( vector<lsquare>& pMOLS ){
 						//RCSsquares.push_back(data);
 
 						//and in reverse
-						vector<int> data1 ;
-						data1.assign(4, 0);
-						data1[0]=j;
-						data1[1] =i;
-						vector<int> dataPos1 = rowMeets(pMOLS[j][jj],pMOLS[i][ii]);
-						data1[2] = dataPos1[0];
-						data1[3] = dataPos1[1];
+
+						data[0]=j;
+						data[1] =i;
+						dataPos = rowMeets(pMOLS[j][jj],pMOLS[i][ii]);
+						data[2] = dataPos[0];
+						data[3] = dataPos[1];
 						// if (!(data1[0]==0&&data1[1]==1&&data1[2]==0) ){
 						//RCSperms.push_back(pMOLS[j][jj]);
 						//cout<<  data1[0]<<" "<<data1[1]<<" "<<data1[2]<<" "<<data1[3]<< " perm "; printPerm(*permIt2);cout<<", "; printPerm(*permIt1); cout<<endl;
 
 						//RCSsquares.push_back(data1);
 
-						tempPerms[data1[0]][data1[1]].push_back(pMOLS[j][jj]);
-						tempSquares[data1[0]][data1[1]].push_back(data1);
+						tempPerms[data[0]][data[1]].push_back(pMOLS[j][jj]);
+						tempSquares[data[0]][data[1]].push_back(data);
 					}
 
 					/*rcsV = rcs(pMOLS[j][jj],pMOLS[i][ii]);
@@ -1666,18 +1664,12 @@ list<permutation> MOLS::getShuffles(permutation pOrig, permutation pNow){
 	//cout<< "listShuffles size - "<< listShuffles.size()<<endl;
 	permutation f = flatten(pNow);
 	//for (pi=listShuffles.begin(); pi!=listShuffles.end(); ++pi){
-	 for (pi=possibleShuffles.begin(); pi!=possibleShuffles.end(); ++pi){
-		// listtemp.push_back( composition(pOrig,inverse(*pi)));
-		  //listtemp.push_back( rcs( pNow,*pi));
-		 permutation z(n,0);
-		 for (unsigned int i=0; i<n; i++){
+	permutation z(n);
+	for (pi=possibleShuffles.begin(); pi!=possibleShuffles.end(); ++pi){
+		 for (unsigned int i=0; i<n; i++)
 			 z[f[(*pi)[i]]] =i;
-		 }
-		  //listtemp.push_back( inverse(composition(f, *pi)));
-		 listtemp.push_back( z);
 
-		//printPerm(*pi); cout<<" | "; printPerm(composition(pOrig,inverse(*pi))) ;cout<<endl;
-		//;cout<<" | ";printPerm(composition(inverse(*pi), pOrig)) ;cout<<" | ";printPerm(composition( pOrig,inverse(*pi))) ;cout<<endl;
+		 listtemp.push_back( z);
 	}
 
 	return listtemp;
@@ -1690,7 +1682,7 @@ bool MOLS::noSmallerRCS(permutation &smallestRCS, vector<lsquare> &pMOLS){
 	vector< permutation >::iterator testPermsit;
 	testPermsit= RCSperms.begin();
 
-	list<permutation>::iterator permIt;int i;
+	list<permutation>::iterator permIt; int i;
 	vector<int> currentOrder(2, 0);
 
 	vector<lsquare> ordMOLS ;
@@ -1713,33 +1705,24 @@ bool MOLS::noSmallerRCS(permutation &smallestRCS, vector<lsquare> &pMOLS){
 		standardForm(roMOLS, (*testRel)[2],(*testRel)[3], *testPermsit);
 		/*cout<<"Before";
 		printMOLS(partMOLS );
-		printMOLSPerms(roMOLS );*/
+		printMOLSPerms(roMOLS );
 
+		printMOLS(roMOLS);
+		printMOLSPerms(roMOLS);
 
-		//changeOrder(pMOLS, (*testRel)[0],(*testRel)[1], roMOLS);
-		//changeOrder(roMOLS, (*testRel)[0],(*testRel)[1]);
-
-		/*//printMOLS(roMOLS);
-		printMOLSPerms(roMOLS);*/
-
-		//cout<<"STD Form - "<<endl;
-		/*printMOLSPerms(roMOLS);cout.flush();*/
+		cout<<"STD Form - "<<endl;printMOLSPerms(roMOLS);cout.flush();*/
 
 		list<permutation> allShuffles = getShuffles(   smallestRCS, roMOLS[1].front());
-
-		// printPerm(rcs2);
 		//cout << endl<<" Test shuffles"<<endl;
 		for (permIt = allShuffles.begin(); permIt != allShuffles.end(); ++permIt) {
-			vector<lsquare> tMOLS(roMOLS);
-			//permutation realShuffle = composition(inverse( *permIt),targetP );
+			//vector<lsquare> tMOLS(roMOLS);
+			/*//permutation realShuffle = composition(inverse( *permIt),targetP );
 			//printPerm( *permIt);
-
-
 			//permuteMOLS(tMOLS, *permIt, *permIt);
- 			/*b*/
+ 			b*/
 
 			//if (!comparePartialMOLS(partMOLS, tMOLS) )// if  part > temp
-			if (!testPermuteMOLS(tMOLS, *permIt, *permIt) )// if  part > temp
+			if (!testPermuteMOLS(roMOLS, *permIt, *permIt) )// if  part > temp
 			{
 				/*for (i=0; i<k; i++){
 					printPerm(partMOLS[i].front());cout<<" ";}*/
@@ -1789,12 +1772,12 @@ bool MOLS::noSmallerRCS(permutation &smallestRCS, vector<lsquare> &pMOLS){
 		list<permutation> allShuffles = getShuffles(smallestRCS,currPerm  );
 
 		for (permIt = allShuffles.begin(); permIt != allShuffles.end(); ++permIt) {
-			vector<lsquare> tMOLS(roMOLS) ;
+		//	vector<lsquare> tMOLS(roMOLS) ;
 			//permuteMOLS(tMOLS, *permIt, *permIt );
 
 
 			//if (!comparePartialMOLS(partMOLS, tMOLS) )// if  part > temp
-			if (!testPermuteMOLS(tMOLS, *permIt, *permIt ))
+			if (!testPermuteMOLS(roMOLS, *permIt, *permIt ))
 			{
 				/*for (i=0; i<k; i++){
 					printPerm(compMOLS[i].back());cout<<" ";}
@@ -2007,7 +1990,7 @@ bool MOLS::checkRCS( permutation &P){
 		return true;//return isCSR(P);*/
 
 	//int targetCS[n+1]={0};
-	vector<int> targetCS(n+1, 0);
+	vector<int> targetCS(n+1);
 	map<int, vector<vector<int> > > dummy_cycles_map;
 	getCycleStructure(partMOLS[1].front(), targetCS,dummy_cycles_map );
 
@@ -2078,7 +2061,7 @@ void MOLS::buildPossibleSquare( vector<vector<int> > &square ){
 void MOLS::generatePossiblePermsToInsertRec(vector<vector<int> > &square, permutation &p, int row,  list<permutation> &possiblePermList ){
 
 	if (row==n){
-		possiblePermList.push_back(copyPerm(p));
+		possiblePermList.push_back((p));
 		//printPerm(p);
 		return;
 	}
@@ -2103,15 +2086,15 @@ void MOLS::generatePossiblePermsToInsertRec(vector<vector<int> > &square, permut
 	return;
 }
 
-void MOLS::generatePossiblePermsLSRec(permutation p, int row,  list<permutation> &possiblePermList ){
+void MOLS::generatePossiblePermsLSRec(permutation& p, int row,  list<permutation> &possiblePermList, vector<bool > &left ){
 	if (row==n){
-		possiblePermList.push_back(copyPerm(p));
+		possiblePermList.push_back(p);
 		//printPerm(p);
 		return;
 	}
 
 	//cout<< endl<< row<<endl; printPerm(p);cout<<endl;
-	int q,w;
+	//int q,w;
 		/*for (q=0;q<n;q++)	{
 			for (w=0;w<n;w++){
 				cout<< currLS[currSquare][q][w]<<" ";
@@ -2119,61 +2102,101 @@ void MOLS::generatePossiblePermsLSRec(permutation p, int row,  list<permutation>
 			cout<<endl;
 		}*/
 
-	int i,j;
-	for (i=0; i<n; i++){
-		if (currLS[currSquare][row][i] == n){
-			p.push_back(i);
-			for(j=0; j<n; j++){
+	//int i,j;
+	for (unsigned int i=0; i<n; i++){
+		if ((left[i]) && (currLS[currSquare][row][i]==n)){
+			left[i] = false;
+			p[row] = i;
+			/*for(j=row+1; j<n; j++){
 				if (currLS[currSquare][j][i]==n)
 					currLS[currSquare][j][i]= (-row-1);
-			}
+			}*/
 
-			generatePossiblePermsLSRec( p, row+1,   possiblePermList	);
-			p.pop_back();
-			for(j=0; j<n; j++){
+			generatePossiblePermsLSRec( p, row+1,   possiblePermList, left	);
+			left[i] = true;
+			//bp.pop_back();
+			/*for(j=row+1; j<n; j++){
 				if (currLS[currSquare][j][i]== (-row-1) )
 					currLS[currSquare][j][i]=n;
-			}
+			}*/
 		}
 	}
 	return;
 }
 
+void MOLS::generatePossiblePermsLSRec2(permutation& p, int row,  list<permutation> &possiblePermList, vector<vector<int> > &poss, vector<bool > &left ){
+	if (row==n){
+		possiblePermList.push_back(p);
+		//printPerm(p);
+		return;
+	}
+	//printPerm(p);
 
-void MOLS::generatePossiblePermsToInsert( list<permutation> &possiblePermList ){
-	int i; permutation p;
+	/*if (p[row]>=0)
+		generatePossiblePermsLSRec2( p, row+1,   possiblePermList, poss, left	);
+	else{*/
+		int j = poss[row].size();
+		for (unsigned int i=0; i<j; i++){
+			if (left[poss[row][i]]  ){
+				p[row] = poss[row][i];
+
+				left[poss[row][i]] = false;
+				generatePossiblePermsLSRec2( p, row+1,   possiblePermList, poss, left	);
+				left[poss[row][i]] = true;
+			}
+		}
+	//}
+	return;
+}
+
+void MOLS::generatePossiblePermsToInsert2( list<permutation> &possiblePermList ){
+	permutation p(n);
 	int j=partMOLS[currSquare].size();
-	p.push_back(j); // because i in the first row is always in the ith position
-	for(i=0; i<n; i++){
-		if (currLS[currSquare][i][j]==n)
-			currLS[currSquare][i][j]=-1;
+
+	p[0] =j; // because i in the first row is always in the ith position
+	vector<int> evec;
+	vector<vector<int> > poss(n);
+	vector<bool> left(n, true);
+	left[j] = false;
+
+	for( unsigned int i=1; i<n; i++){
+		for(unsigned int j=0; j<n; j++){
+			if (currLS[currSquare][i][j] == n)
+				poss[i].push_back(j);
+		}
+		/*if (poss[i].size()==1){
+			p[i] = poss[i].front();
+			left[p[i]] = false;
+		}*/
 	}
-	generatePossiblePermsLSRec( p, 1,   possiblePermList	) ;
-	for(i=0; i<n; i++){
-		if (currLS[currSquare][i][j]==-1)
-			currLS[currSquare][i][j]=n;
-	}
+
+	generatePossiblePermsLSRec2( p, 1,   possiblePermList, poss, left	) ;
+
+
 	//cout<< "Size"<<possiblePermList.size()<<endl;
 
 	return;
-
-	/*//cout<<"Enter genPossPerms";cout.flush();
-	vector<vector<int> > square(n, vector<int>(n, 1));
-
-	buildPossibleSquare(square);
-
-	int q,w;
-	for (q=0;q<n;q++)	{
-		for (w=0;w<n;w++){
-			cout<< square[q][w]<<" ";
-		}
-		cout<<endl;
-	}
+}
 
 
-	generatePossiblePermsToInsertRec(square, p, 0,   possiblePermList	) ;
-	return;*/
+void MOLS::generatePossiblePermsToInsert( list<permutation> &possiblePermList ){
+	int i; permutation p(n);
+	int j=partMOLS[currSquare].size();
+	p[0] = j; // because i in the first row is always in the ith position
+	vector<bool> left(n, true);
+	left[j] = false;
+	/*for(i=1; i<n; i++){
+		if (currLS[currSquare][i][j]==n)
+			currLS[currSquare][i][j]=-1;
+	}*/
+	generatePossiblePermsLSRec( p, 1,   possiblePermList, left	) ;
+	/*for(i=1; i<n; i++){
+		if (currLS[currSquare][i][j]==-1)
+			currLS[currSquare][i][j]=n;
+	}*/
+	//cout<< "Size"<<possiblePermList.size()<<endl;
 
+	return;
 }
 
 
@@ -2253,10 +2276,8 @@ void MOLS::findMOLS4(){
 			cout<<endl;
 		}
 	}
-	//printMOLS(partMOLS)	;
-	//printMOLSPerms(partMOLS);
-/*
-	if (currSquare==0&& partMOLS[k-1].size()==2)
+
+/*	if (currSquare==0&& partMOLS[k-1].size()==2)
 		return;*/
 
 	if (partMOLS[k-1].size()==n) //if the last square is filled in completely, contains n permutations
@@ -2275,13 +2296,13 @@ void MOLS::findMOLS4(){
 
 	}
 	//buildCurrentLS();
-	permutation P, p1;
+	permutation P(n), p1(n);
 
 	//list<permutation> allPermTest;
 
 	for (i=0; i<n; i++){
-		P.push_back(i);
-		p1.push_back(i);
+		P[i] = i;
+		p1[i] = i;
 	}
 	int z = partMOLS[currSquare].size();
 	p1[z] =0;
@@ -2401,7 +2422,7 @@ void MOLS::findMOLS4(){
 			//cout<< "Size"<< testPerms.size();
 			list<permutation> possiblePermList;
 			//cout<< "Call gen poss perms"; cout.flush();
-			generatePossiblePermsToInsert(  possiblePermList );
+			generatePossiblePermsToInsert2(  possiblePermList );
 			//cout<< "Size"<< possiblePermList.size();cout.flush();
 			//cout<< possiblePermList.size(); cout.flush();
 			list<permutation>::iterator possPermIt;
@@ -2476,9 +2497,9 @@ void MOLS::printAllStatics(){
 
 }
 
-int main(int argc,char *argv[])
-{
-	    MOLS threemols(7,3);
+int main(int argc,char *argv[]){
+
+	MOLS threemols(7,3);
 	string filename = argv[1];
 
 /*
@@ -2488,7 +2509,7 @@ int main(int argc,char *argv[])
 	std::cout.rdbuf(out.rdbuf());
 */
 
-	 // MOLS threemols(filename);
+	//MOLS threemols(filename);
 
 
 	threemols.enumerateMOLS();
