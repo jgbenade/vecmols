@@ -51,7 +51,6 @@ private:
 	vector<int> identity;
 	vector<int> identityIt;
 	vector<vector<vector<permutation> > > sqSymPossPerms;
-	vector<vector<int> > detailedCount;
 
 
 	int printUniversals(lsquare &l);
@@ -149,7 +148,6 @@ MOLS::MOLS( int n, int k){
 	sqSymPossPerms.resize(k, vector<vector<permutation> >(n) );
 	identityIt.resize(k, 0 );
 	identityIt[0]=1;
-	detailedCount.resize(n*k+1);
 
     for (unsigned int i=0; i<n; i++){
 		identity.push_back(i);
@@ -277,7 +275,7 @@ MOLS::MOLS( string filename){
 		}
 
 	sqSymPossPerms.resize(k, vector<vector<permutation> >(n) );
-	detailedCount.resize(n*k+1);
+
 
 	//Get cycle structure representatives for U_0^1
 	vector<int> cycles(n+1, 0);
@@ -291,6 +289,9 @@ MOLS::MOLS( string filename){
 		}
 		cout<<endl;
 	}
+
+
+
 	//Initialize currLS
  	updateLS();
 
@@ -351,13 +352,7 @@ int MOLS::enumerateMOLS(void	){
 	}
 
 
-	vector<int>::const_iterator vit;
-	for (i=0; i< k*n; i++){
-		cout <<"@ ";
-		for (vit = detailedCount[i].begin(); vit!= detailedCount[i].end(); vit++)
-			cout<< *vit<< " ";
-		cout<< " opsies na "<<i/k<<"."<<i%k<<endl;
-	}
+
 
 	cout<< "# "<<count_MOLS << " MOLS found"<<endl;
     cout<< "# ";
@@ -2361,9 +2356,7 @@ void MOLS::updatePossiblePerms(){
  }
 
 void MOLS::findMOLS4(){
-	int counter = (partMOLS[currSquare].size())*k+currSquare-1;
  	branchCount_[(partMOLS[currSquare].size())*k+currSquare-1]++;
-
 	int i=0;
 
 	if (partMOLS[k-1].size()==n) //if the last square is filled in completely, contains n permutations
@@ -2391,10 +2384,8 @@ void MOLS::findMOLS4(){
 	}
 	cout<<endl;
 
-	if (currSquare==2&& partMOLS[1].size()==2)
+	if (currSquare==1&& partMOLS[0].size()==2)
 		return;
-	else
-		detailedCount[counter].push_back(0);
 
 
 	if (currSquare==0){
@@ -2433,7 +2424,6 @@ void MOLS::findMOLS4(){
  						if (getSmallRelCS(partMOLS)){
  							if (isSmallest4()){
  								currSquare = (currSquare+1)%k;
- 								detailedCount[counter].back()++;
 								findMOLS4( );
 								currSquare = (currSquare-1+k)%k;
 							}
@@ -2484,8 +2474,8 @@ void MOLS::findMOLS4(){
 
 			possibleShuffles = genRelevantPermutations(partMOLS[currSquare].front());
 			currSquare = (currSquare+1)%k;
-			detailedCount[counter].back()++;
 			findMOLS4( );
+
 			currSquare = (currSquare-1+k)%k;
 			/*cout<<"Return from findmols structure"<<endl;
 			printMOLS(partMOLS);*/
@@ -2509,7 +2499,6 @@ void MOLS::findMOLS4(){
 									if (getSmallRelCS(partMOLS)){
 										if (isSmallest4( )){
 											currSquare = (currSquare+1)%k;
-											detailedCount[counter].back()++;
 											findMOLS4( );
 											currSquare = (currSquare-1+k)%k;
 										}
