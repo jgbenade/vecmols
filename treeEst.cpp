@@ -8,6 +8,8 @@
 #include <fstream>
 #include <string>
 #include <list>
+#include <stdlib.h>     /* srand, rand */
+#include <math.h>
 
 using namespace std;
 
@@ -54,7 +56,8 @@ private:
 	vector<vector<int> > detailedCount;
 	vector<int> numIsSmallest;
 	vector<int>  numIsSmallestTrue;
-
+	vector<int> estimates;
+	vector<vector<int> > generalSummary;
 
 	int printUniversals(lsquare &l);
 	void printPerm(permutation p);
@@ -105,7 +108,7 @@ private:
 	void  buildPossibleSquare( vector<vector<int> > &square ) ;
 	void  generatePossiblePermsToInsertRec(vector<vector<int> > &square, permutation &p, int row,  list<permutation> &possiblePermList ) ;
 	void  generatePossiblePermsToInsert(  list<permutation> &possiblePermList ) ;
-	void  findMOLS4() ;
+	int  findMOLS4(float scaleFactor) ;
 	void buildCurrentLS();
 	list<vector<int> >  getSmallRelCS( vector<lsquare> &pMOLS, list<permutation> &listP);
 	void removeUniversal(permutation &p	);
@@ -152,8 +155,11 @@ MOLS::MOLS( int n, int k){
 	identityIt.resize(k, 0 );
 	identityIt[0]=1;
 	detailedCount.resize(n*k+1);
-	 numIsSmallest.resize(n, 0) ;
-		  numIsSmallestTrue.resize(n, 0) ;
+	numIsSmallest.resize(n, 0) ;
+	numIsSmallestTrue.resize(n, 0) ;
+	estimates.resize(n*k, 0);
+	generalSummary.resize(n*k, vector<int>(2,0));
+	srand(time(NULL))	;
 
     for (unsigned int i=0; i<n; i++){
 		identity.push_back(i);
@@ -286,6 +292,11 @@ MOLS::MOLS( string filename){
 	detailedCount.resize(n*k+1);
 	numIsSmallest.resize(n, 0) ;
 	numIsSmallestTrue.resize(n, 0) ;
+	estimates.resize(n*k, 0);
+	generalSummary.resize(n*k, vector<int>(2,0));
+	srand(time(NULL))	;
+
+
 
 	//Get cycle structure representatives for U_0^1
 	vector<int> cycles(n+1, 0);
@@ -346,7 +357,7 @@ int MOLS::enumerateMOLS(void	){
 		}
 		addUniversal((ss));
 		currSquare++;
-		findMOLS4();
+		findMOLS4(1);
 	}
 	else{
 		if (partMOLS[1].size()>0){
@@ -355,26 +366,38 @@ int MOLS::enumerateMOLS(void	){
 			possibleShuffles = genRelevantPermutations(partMOLS[1].front());
 		}
 		//if (isSmallest4())
-			findMOLS4();
+			findMOLS4(1);
 	}
 
 
-	vector<int>::const_iterator vit;
+	/*vector<int>::const_iterator vit;
 	for (i=0; i< k*n; i++){
 		cout <<"@ ";
 		for (vit = detailedCount[i].begin(); vit!= detailedCount[i].end(); vit++)
 			cout<< *vit<< " ";
 		cout<< " opsies na "<<i/k<<"."<<i%k<<endl;
-	}
+	}*/
 
 	cout<< "# "<<count_MOLS << " MOLS found"<<endl;
-    cout<< "# ";
+    cout<< "# Visited ";
 	for (i=0; i<n*k;i++)
 		cout<<branchCount_[i]<<" ";
 	cout<<endl;
+
+	cout<< "# Estimated ";
+	for (i=0; i<n*k;i++)
+			cout<<estimates[i]<<" ";
+		cout<<endl;
+
+		cout<< "# Summ ";
+			for (i=0; i<n*k;i++)
+					cout<<generalSummary[i][0]<<"/"<<generalSummary[i][1]<<" ";
+				cout<<endl;
+
 	for (i=0; i< n; i++){
 		cout<<"# "<< branchCount_[k-1 +i*k] <<" takke op vlak "<<i<< " | "<< numIsSmallest[i]<<" "<<numIsSmallestTrue[i]<< " "<< (numIsSmallestTrue[i]*1.)/numIsSmallest[i]<<endl;
 	}
+
 
 	t = clock() - t;
 	cout<<"# "<<  t/1000000.0 << " seconds"<< endl;
@@ -2376,11 +2399,12 @@ void MOLS::updatePossiblePerms(){
 
  }
 
-void MOLS::findMOLS4(){
+int MOLS::findMOLS4(float scaleFactor){
 	int counter = (partMOLS[currSquare].size())*k+currSquare-1;
- 	branchCount_[(partMOLS[currSquare].size())*k+currSquare-1]++;
+ 	branchCount_[counter]++;
 
 	int i=0;
+	int nofFeasible;
 
 	if (partMOLS[k-1].size()==n) //if the last square is filled in completely, contains n permutations
 		{
@@ -2389,14 +2413,13 @@ void MOLS::findMOLS4(){
 					printMOLS(partMOLS);
 					count_MOLS++;
 					//addToCompletedMOLS();
-					return;
+					return 0;
 
 				//}
 			}
-			else	return;
+			else return 1;
 
 		}
-
 	/*printDots(2*partMOLS[0].size());
 	cout<<branchCount_[partMOLS[currSquare].size()*k+currSquare-1];
 	printDots(4);
@@ -2412,12 +2435,12 @@ void MOLS::findMOLS4(){
 		return;
 	else*/
 		detailedCount[counter].push_back(0);
-
+		detailedCount[counter].push_back(0);
 
 	if (currSquare==0){
 
 		if (partMOLS[0].size()>0){
-			printDots(2*partMOLS[0].size());
+			/*printDots(2*partMOLS[0].size());
 			cout<<branchCount_[partMOLS[currSquare].size()*k+currSquare-1];
 			printDots(4);
 
@@ -2425,11 +2448,12 @@ void MOLS::findMOLS4(){
 				printPerm(partMOLS[i].back()	);
 				cout<<" ";
 			}
-			cout<<endl;
-
+			cout<<endl;*/
 			updatePossiblePerms();
   		}
 	}
+
+
 /*
 	if (currSquare==0&& partMOLS[k-1].size()==2)
 		return;*/
@@ -2441,56 +2465,74 @@ void MOLS::findMOLS4(){
 		if (partMOLS[currSquare].size()>0)
 		{//in general
  			int currUni = partMOLS[currSquare].size();
-
-			for (unsigned int possPermIt=0; possPermIt< sqSymPossPerms[currSquare][currUni].size(); ++possPermIt){
+ 			int totalBranches = sqSymPossPerms[currSquare][currUni].size();
+ 			int numdone = 0;
+ 			//count numfeasible completions and store indices
+ 			vector<int> feasiblePoss;
+ 			feasiblePoss.reserve(totalBranches);
+ 			for (unsigned int possPermIt=0;    possPermIt< sqSymPossPerms[currSquare][currUni].size(); ++possPermIt ){
  				if (checkOrthogonal(sqSymPossPerms[currSquare][currUni][possPermIt])){
-					//printDots(currSquare, partMOLS[currSquare].size(), k);  printPerm((*possPermIt));
-					//if (checkRCS( (*possPermIt))){
- 						addUniversal(sqSymPossPerms[currSquare][currUni][possPermIt]);
- 						if (getSmallRelCS(partMOLS)){
- 							if (isSmallest4(true)){
- 								currSquare = (currSquare+1)%k;
- 								detailedCount[counter].back()++;
-								findMOLS4( );
-								currSquare = (currSquare-1+k)%k;
-							}
-						}
+ 					//printDots(currSquare, partMOLS[currSquare].size(), k);  printPerm((*possPermIt));
+ 					//if (checkRCS( (*possPermIt))){
+ 					addUniversal(sqSymPossPerms[currSquare][currUni][possPermIt]);
+ 					if (getSmallRelCS(partMOLS)){
+ 						numdone++;
+ 						feasiblePoss.push_back(possPermIt);
+ 					}
+ 					removeUniversal(sqSymPossPerms[currSquare][currUni][possPermIt]);
+ 				}
+ 			}
+ 			if (numdone>0){
 
-						removeUniversal(sqSymPossPerms[currSquare][currUni][possPermIt]);
+ 				nofFeasible= numdone;
+ 				int numVisited = min(int(.05*numdone), 300);
+ 				if (numVisited<10)
+ 					numVisited = min(10, numdone);
+ 				int jump = (numVisited>0 ? numdone /numVisited: 0);
+
+ 				int numtries = 0;
+ 				//now visited some number of them
+ 				float sum = 0;
+ 				for (unsigned int possPermIt=0;  numtries <numVisited /*&& possPermIt<numdone possPermIt< sqSymPossPerms[currSquare][currUni].size()*/; /*++possPermIt*/
+ 						possPermIt= rand()%nofFeasible){
+ 					numtries++;
+ 					addUniversal(sqSymPossPerms[currSquare][currUni][feasiblePoss[possPermIt]]);
+ 					//if (getSmallRelCS(partMOLS)){
+ 					//cout<<" inc numdone";
+ 					if (isSmallest4(true)){
+ 						currSquare = (currSquare+1)%k;
+ 						//detailedCount[counter].back()++;
+ 						sum = sum+findMOLS4(scaleFactor*(float(nofFeasible)/numVisited));
+ 						currSquare = (currSquare-1+k)%k;
+ 					}
  					//}
-				/*	else{
-
-												for (i=0; i<currSquare; i++){
-													printPerm(partMOLS[i].back());cout<<"\t";}
-												printPerm((*possPermIt));
-												cout<< "checkrcs "; cout<<endl;
-											}*/
-				}
-				/*else{
-
-					for (i=0; i<currSquare; i++){
-						printPerm(partMOLS[i].back());cout<<"\t";}
-					printPerm((*possPermIt));
-					cout<< "orthog "; cout<<endl;
-				}*/
-
-			}
+ 					removeUniversal(sqSymPossPerms[currSquare][currUni][feasiblePoss[possPermIt]]);
+ 				}
+ 				int avgFeasible = sum/(numtries);
+ 				int est = avgFeasible*nofFeasible*scaleFactor ;
+ 				//if (currUni<2&& currSquare<2) cout<<currUni<<"."<< currSquare<<" visiting "<< numVisited<< " / "<<numdone<<" / "<<totalBranches<<" Avg: "<<avgFeasible<< " Est: "<< est <<" , " << scaleFactor<<endl;
+ 				estimates[counter] = estimates[counter] + est;
+ 				//return (avgFeasible *(float(nofFeasible)/numVisited));
+ 				generalSummary[counter][0] = generalSummary[counter][0]+nofFeasible;
+ 				generalSummary[counter][1] = generalSummary[counter][1]+numVisited;
+ 				return nofFeasible;
+ 			}//cout<< currUni<<"."<< currSquare<<"V "<< numdone<< "/"<<numVisited <<"/"<<totalBranches<<endl;
+ 			else return 0;
 		}
     else {
         if(currSquare==1&& partMOLS[currSquare].size()==0	){
 		list<permutation>::iterator CSRit;
 		int j=1;
+		int sum =0;
 		for (CSRit=cycleStructureReps.begin(); CSRit!= cycleStructureReps.end(); ++CSRit){
 			//++CSRit; ++CSRit;++CSRit;
 			if (printOut){
 				cout << j++ << ". u0^1 = ";
 				printPerm(*CSRit);
 				cout<<endl;
-
 			}
 			//No need for any of the checks, as this is only the first perm in the second square.
 			//Automatically orthog, will fit (empty), forced to be RCS..
-
 
 			map<int, vector<vector<int> > > dummy_cycles_map;
 			getCycleStructure(*CSRit,  currentCS, dummy_cycles_map );
@@ -2502,72 +2544,63 @@ void MOLS::findMOLS4(){
 			possibleShuffles = genRelevantPermutations(partMOLS[currSquare].front());
 			currSquare = (currSquare+1)%k;
 			detailedCount[counter].back()++;
-			findMOLS4( );
+			sum = sum+findMOLS4(1);
 			currSquare = (currSquare-1+k)%k;
 			/*cout<<"Return from findmols structure"<<endl;
 			printMOLS(partMOLS);*/
 			removeUniversal(*CSRit);
-
-
-			//CSRit = --cycleStructureReps.end();
 			/*cout<<"cs removed"<<endl;
 			printMOLS(partMOLS);*/
 			currentCS.clear();currentCS.resize(n+1, 0);
 			//partMOLS[currSquare].pop_back();
 		}
+
+		estimates[counter] = estimates[counter]+ sum;
+		return cycleStructureReps.size();
+
 	}
 	else{ //not u_0^(1)
 		permutation P(identity) ;
-		if (partMOLS[currSquare].size()==0 ){
-		//	if (!testPerms.size()==0){
-				//cout << " sq "<< (currSquare+1)<< ", "<< testPerms.size()<<endl;
-				do{
-					if (P.front()<1){
-						if (checkFit(P)){
-							if (checkOrthogonal(P)){
-									addUniversal(P);
-									if (getSmallRelCS(partMOLS)){
-										if (isSmallest4( )){
-											currSquare = (currSquare+1)%k;
-											detailedCount[counter].back()++;
-											findMOLS4( );
-											currSquare = (currSquare-1+k)%k;
-										}
-									}
-									removeUniversal(P);
+		int currUni = partMOLS[currSquare].size();
+		int totalBranches = sqSymPossPerms[currSquare][currUni].size();
+		int numdone = 0;
 
-								/*else{
-
-									for (i=0; i<currSquare; i++){
-										printPerm(partMOLS[i].back());cout<<" ";}
-									printPerm(P);
-									cout<< "checkrcs "; cout<<endl;
-								}*/
+		int sum=0;
+		do{
+			if (P.front()<1){
+				if (checkFit(P)){
+					if (checkOrthogonal(P)){
+						addUniversal(P);
+						if (getSmallRelCS(partMOLS)){
+							if (isSmallest4( )){
+								currSquare = (currSquare+1)%k;
+								numdone++;
+								sum = sum+findMOLS4(1);
+								currSquare = (currSquare-1+k)%k;
 							}
-							/*else{
-
-								for (i=0; i<currSquare; i++){
-									printPerm(partMOLS[i].back());cout<<" ";}
-								printPerm(P);
-								cout<< "orthog "; cout<<endl;
-							}*/
 						}
-						/*else{
-
-							for (i=0; i<currSquare; i++){
-								printPerm(partMOLS[i].back());cout<<" ";}
-							printPerm(P);
-							cout<< "checkfit "; cout<<endl;
-						}*/
+						removeUniversal(P);
 					}
-					else break;
-				}while(next_permutation(P.begin(), P.end()));
+				}
 			}
-}
-	}
+			else break;
+		}while(next_permutation(P.begin(), P.end()));
 
 
-	return ;
+			//int avgFeasible = sum/float(numdone);
+		estimates[counter] = estimates[counter]+ sum;
+			//return (avgFeasible *(float(nofFeasible)/numVisited));
+		return numdone;
+
+
+
+		}
+
+
+    }
+
+
+        return nofFeasible ;
 
 }
 
@@ -2595,9 +2628,9 @@ void MOLS::printAllStatics(){
 
 int main(int argc,char *argv[]){
 
-	MOLS threemols(7,3);
+//	MOLS threemols(6,3);
 	string filename = argv[1];
-    //MOLS threemols(filename);
+    MOLS threemols(filename);
 /*
 	string outfile = "out103_1.txt";//+filename;
 	std::ofstream out(outfile.c_str());
