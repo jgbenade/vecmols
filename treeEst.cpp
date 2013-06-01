@@ -10,6 +10,7 @@
 #include <list>
 #include <stdlib.h>     /* srand, rand */
 #include <math.h>
+#include "../bigintlib/BigIntegerLibrary.hh"
 
 using namespace std;
 
@@ -54,10 +55,10 @@ private:
 	vector<int> identityIt;
 	vector<vector<vector<permutation> > > sqSymPossPerms;
 	vector<vector<int> > detailedCount;
-	vector<int> numIsSmallest;
-	vector<int>  numIsSmallestTrue;
-	vector<int> estimates;
-	vector<vector<int> > generalSummary;
+	vector<BigInteger> numIsSmallest;
+	vector<BigInteger>  numIsSmallestTrue;
+	vector<BigInteger> estimates;
+	vector<vector<BigInteger> > generalSummary;
 
 	int printUniversals(lsquare &l);
 	void printPerm(permutation p);
@@ -108,7 +109,7 @@ private:
 	void  buildPossibleSquare( vector<vector<int> > &square ) ;
 	void  generatePossiblePermsToInsertRec(vector<vector<int> > &square, permutation &p, int row,  list<permutation> &possiblePermList ) ;
 	void  generatePossiblePermsToInsert(  list<permutation> &possiblePermList ) ;
-	int  findMOLS4(float scaleFactor) ;
+	int  findMOLS4(float scaleFactor, bool Visit) ;
 	void buildCurrentLS();
 	list<vector<int> >  getSmallRelCS( vector<lsquare> &pMOLS, list<permutation> &listP);
 	void removeUniversal(permutation &p	);
@@ -155,11 +156,11 @@ MOLS::MOLS( int n, int k){
 	identityIt.resize(k, 0 );
 	identityIt[0]=1;
 	detailedCount.resize(n*k+1);
-	numIsSmallest.resize(n, 0) ;
-	numIsSmallestTrue.resize(n, 0) ;
-	estimates.resize(n*k, 0);
-	generalSummary.resize(n*k, vector<int>(2,0));
-	srand(time(NULL))	;
+	numIsSmallest.resize(n ) ;
+	numIsSmallestTrue.resize(n ) ;
+	estimates.resize(n*k );
+	generalSummary.resize(n*k, vector<BigInteger>(2 ));
+	srand(time(0))	;
 
     for (unsigned int i=0; i<n; i++){
 		identity.push_back(i);
@@ -290,10 +291,10 @@ MOLS::MOLS( string filename){
 
 	sqSymPossPerms.resize(k, vector<vector<permutation> >(n) );
 	detailedCount.resize(n*k+1);
-	numIsSmallest.resize(n, 0) ;
-	numIsSmallestTrue.resize(n, 0) ;
-	estimates.resize(n*k, 0);
-	generalSummary.resize(n*k, vector<int>(2,0));
+	numIsSmallest.resize(n) ;
+	numIsSmallestTrue.resize(n ) ;
+	estimates.resize(n*k );
+	generalSummary.resize(n*k, vector<BigInteger>(2 ));
 	srand(time(NULL))	;
 
 
@@ -357,7 +358,7 @@ int MOLS::enumerateMOLS(void	){
 		}
 		addUniversal((ss));
 		currSquare++;
-		findMOLS4(1);
+		findMOLS4(1, true);
 	}
 	else{
 		if (partMOLS[1].size()>0){
@@ -366,7 +367,7 @@ int MOLS::enumerateMOLS(void	){
 			possibleShuffles = genRelevantPermutations(partMOLS[1].front());
 		}
 		//if (isSmallest4())
-			findMOLS4(1);
+			findMOLS4(1, true);
 	}
 
 
@@ -391,12 +392,12 @@ int MOLS::enumerateMOLS(void	){
 
 		cout<< "# Summ ";
 			for (i=0; i<n*k;i++)
-					cout<<generalSummary[i][0]<<"/"<<generalSummary[i][1]<<" ";
+					cout<<bigIntegerToString(generalSummary[i][0])<<"/"<<bigIntegerToString(generalSummary[i][1])<<" ";
 				cout<<endl;
 
-	for (i=0; i< n; i++){
+	/*for (i=0; i< n; i++){
 		cout<<"# "<< branchCount_[k-1 +i*k] <<" takke op vlak "<<i<< " | "<< numIsSmallest[i]<<" "<<numIsSmallestTrue[i]<< " "<< (numIsSmallestTrue[i]*1.)/numIsSmallest[i]<<endl;
-	}
+	}*/
 
 
 	t = clock() - t;
@@ -1842,7 +1843,7 @@ bool MOLS::noSmallerRCS(permutation &smallestRCS){
 bool MOLS::isSmallest4( ){
 
 if (currSquare == k-1	){
-	numIsSmallest[partMOLS[k-1].size()]++;
+	numIsSmallest[partMOLS[k-1].size()]+=1;
 
 	if (!noSmallerRCS( partMOLS[1].front() )){
 		/*for (i=0; i<k; i++)
@@ -1850,7 +1851,7 @@ if (currSquare == k-1	){
 		cout << "smaller cs"<<endl;*/
 			return false;
 		}
-numIsSmallestTrue[partMOLS[k-1].size()]++;
+	numIsSmallestTrue[partMOLS[k-1].size()]=numIsSmallestTrue[partMOLS[k-1].size()]+1;
 }
 	return true;
 
@@ -2399,7 +2400,7 @@ void MOLS::updatePossiblePerms(){
 
  }
 
-int MOLS::findMOLS4(float scaleFactor){
+ int MOLS::findMOLS4(float scaleFactor, bool Visit){
 	int counter = (partMOLS[currSquare].size())*k+currSquare-1;
  	branchCount_[counter]++;
 
@@ -2461,69 +2462,97 @@ int MOLS::findMOLS4(float scaleFactor){
 	//if this is the first universal iln the second square we look at the class representatives
 
 		//}
-
-		if (partMOLS[currSquare].size()>0)
-		{//in general
- 			int currUni = partMOLS[currSquare].size();
- 			int totalBranches = sqSymPossPerms[currSquare][currUni].size();
- 			int numdone = 0;
- 			//count numfeasible completions and store indices
- 			vector<int> feasiblePoss;
- 			feasiblePoss.reserve(totalBranches);
- 			for (unsigned int possPermIt=0;    possPermIt< sqSymPossPerms[currSquare][currUni].size(); ++possPermIt ){
- 				if (checkOrthogonal(sqSymPossPerms[currSquare][currUni][possPermIt])){
- 					//printDots(currSquare, partMOLS[currSquare].size(), k);  printPerm((*possPermIt));
- 					//if (checkRCS( (*possPermIt))){
- 					addUniversal(sqSymPossPerms[currSquare][currUni][possPermIt]);
- 					if (getSmallRelCS(partMOLS)){
- 						numdone++;
- 						feasiblePoss.push_back(possPermIt);
- 					}
- 					removeUniversal(sqSymPossPerms[currSquare][currUni][possPermIt]);
- 				}
- 			}
- 			if (numdone>0){
-
- 				nofFeasible= numdone;
- 				int numVisited = min(int(.05*numdone), 300);
- 				if (numVisited<10)
- 					numVisited = min(10, numdone);
- 				int jump = (numVisited>0 ? numdone /numVisited: 0);
-
- 				int numtries = 0;
- 				//now visited some number of them
- 				float sum = 0;
- 				for (unsigned int possPermIt=0;  numtries <numVisited /*&& possPermIt<numdone possPermIt< sqSymPossPerms[currSquare][currUni].size()*/; /*++possPermIt*/
- 						possPermIt= rand()%nofFeasible){
- 					numtries++;
- 					addUniversal(sqSymPossPerms[currSquare][currUni][feasiblePoss[possPermIt]]);
- 					//if (getSmallRelCS(partMOLS)){
- 					//cout<<" inc numdone";
- 					if (isSmallest4(true)){
- 						currSquare = (currSquare+1)%k;
- 						//detailedCount[counter].back()++;
- 						sum = sum+findMOLS4(scaleFactor*(float(nofFeasible)/numVisited));
- 						currSquare = (currSquare-1+k)%k;
- 					}
- 					//}
- 					removeUniversal(sqSymPossPerms[currSquare][currUni][feasiblePoss[possPermIt]]);
- 				}
- 				int avgFeasible = sum/(numtries);
- 				int est = avgFeasible*nofFeasible*scaleFactor ;
- 				//if (currUni<2&& currSquare<2) cout<<currUni<<"."<< currSquare<<" visiting "<< numVisited<< " / "<<numdone<<" / "<<totalBranches<<" Avg: "<<avgFeasible<< " Est: "<< est <<" , " << scaleFactor<<endl;
- 				estimates[counter] = estimates[counter] + est;
- 				//return (avgFeasible *(float(nofFeasible)/numVisited));
- 				generalSummary[counter][0] = generalSummary[counter][0]+nofFeasible;
- 				generalSummary[counter][1] = generalSummary[counter][1]+numVisited;
- 				return nofFeasible;
- 			}//cout<< currUni<<"."<< currSquare<<"V "<< numdone<< "/"<<numVisited <<"/"<<totalBranches<<endl;
- 			else return 0;
+	if (partMOLS[currSquare].size()>0)
+	{//in general
+		int currUni = partMOLS[currSquare].size();
+		int totalBranches = sqSymPossPerms[currSquare][currUni].size();
+		int nofFeasible = 0;
+		//count numfeasible completions and store indices
+		vector<int> feasiblePoss;
+		feasiblePoss.reserve(totalBranches);
+		for (unsigned int possPermIt=0;    possPermIt< sqSymPossPerms[currSquare][currUni].size(); ++possPermIt ){
+			if (checkOrthogonal(sqSymPossPerms[currSquare][currUni][possPermIt])){
+				//printDots(currSquare, partMOLS[currSquare].size(), k);  printPerm((*possPermIt));
+				//if (checkRCS( (*possPermIt))){
+				addUniversal(sqSymPossPerms[currSquare][currUni][possPermIt]);
+				if (getSmallRelCS(partMOLS)){
+					nofFeasible++;
+					feasiblePoss.push_back(possPermIt);
+				}
+				removeUniversal(sqSymPossPerms[currSquare][currUni][possPermIt]);
+			}
 		}
+		if (Visit && nofFeasible>0){
+			int numVisited=0;
+			int numPolled=0;
+			if (nofFeasible>3){
+				numVisited = min(int(.05*nofFeasible), 10);
+				if (numVisited<3)
+					numVisited = min(3, nofFeasible);
+				if (numVisited < .05*nofFeasible){
+					numPolled = min(5, nofFeasible); //repolling already visited one, especially when there are few
+				}
+			}
+			else
+				numPolled = nofFeasible;
+
+
+			//int jump = (numVisited>0 ? nofFeasible /numVisited: 0);
+
+			int numtries = 0;
+			//now visited some number of them
+			BigInteger sum = 0;
+			for (unsigned int possPermIt=0;  numtries <numVisited /*&& possPermIt<numdone possPermIt< sqSymPossPerms[currSquare][currUni].size()*/; /*++possPermIt*/
+					possPermIt= rand()%nofFeasible){
+				numtries++;
+				addUniversal(sqSymPossPerms[currSquare][currUni][feasiblePoss[possPermIt]]);
+				//if (getSmallRelCS(partMOLS)){
+				//cout<<" inc numdone";
+				if (isSmallest4(true)){
+					currSquare = (currSquare+1)%k;
+					//detailedCount[counter].back()++;
+					sum = sum+findMOLS4(scaleFactor*(float(nofFeasible)/numVisited), true);
+					currSquare = (currSquare-1+k)%k;
+				}
+				//}
+				removeUniversal(sqSymPossPerms[currSquare][currUni][feasiblePoss[possPermIt]]);
+			}
+			for (unsigned int possPermIt=0;  numtries <numVisited+numPolled /*&& possPermIt<numdone possPermIt< sqSymPossPerms[currSquare][currUni].size()*/; /*++possPermIt*/
+					possPermIt= rand()%nofFeasible){
+				numtries++;
+				addUniversal(sqSymPossPerms[currSquare][currUni][feasiblePoss[possPermIt]]);
+				//if (getSmallRelCS(partMOLS)){
+				//cout<<" inc numdone";
+				if (isSmallest4(true)){
+					currSquare = (currSquare+1)%k;
+					//detailedCount[counter].back()++;
+					sum = sum+findMOLS4(scaleFactor*(float(nofFeasible)/numVisited), false);
+					currSquare = (currSquare-1+k)%k;
+				}
+				//}
+				removeUniversal(sqSymPossPerms[currSquare][currUni][feasiblePoss[possPermIt]]);
+			}
+			BigInteger avgFeasible(sum);
+			avgFeasible/=numtries;
+			//BigInteger avgF(avgFeasible);
+			long int prod = ( long int)(nofFeasible * scaleFactor);
+			BigInteger est = avgFeasible*prod ;
+			//if (currUni<2&& currSquare<2) cout<<currUni<<"."<< currSquare<<" visiting "<< numVisited<< " / "<<numdone<<" / "<<totalBranches<<" Avg: "<<avgFeasible<< " Est: "<< est <<" , " << scaleFactor<<endl;
+			estimates[counter] = estimates[counter] + est;
+			//return (avgFeasible *(float(nofFeasible)/numVisited));
+			generalSummary[counter][0] = generalSummary[counter][0]+nofFeasible;
+			generalSummary[counter][1] = generalSummary[counter][1]+numVisited;
+		}
+		return nofFeasible;
+
+	}//cout<< currUni<<"."<< currSquare<<"V "<< numdone<< "/"<<numVisited <<"/"<<totalBranches<<endl;
+
+
     else {
         if(currSquare==1&& partMOLS[currSquare].size()==0	){
 		list<permutation>::iterator CSRit;
 		int j=1;
-		int sum =0;
+		BigInteger sum ;
 		for (CSRit=cycleStructureReps.begin(); CSRit!= cycleStructureReps.end(); ++CSRit){
 			//++CSRit; ++CSRit;++CSRit;
 			if (printOut){
@@ -2544,7 +2573,7 @@ int MOLS::findMOLS4(float scaleFactor){
 			possibleShuffles = genRelevantPermutations(partMOLS[currSquare].front());
 			currSquare = (currSquare+1)%k;
 			detailedCount[counter].back()++;
-			sum = sum+findMOLS4(1);
+			sum = sum+findMOLS4(1, true);
 			currSquare = (currSquare-1+k)%k;
 			/*cout<<"Return from findmols structure"<<endl;
 			printMOLS(partMOLS);*/
@@ -2565,7 +2594,7 @@ int MOLS::findMOLS4(float scaleFactor){
 		int totalBranches = sqSymPossPerms[currSquare][currUni].size();
 		int numdone = 0;
 
-		int sum=0;
+		BigInteger sum;
 		do{
 			if (P.front()<1){
 				if (checkFit(P)){
@@ -2575,7 +2604,7 @@ int MOLS::findMOLS4(float scaleFactor){
 							if (isSmallest4( )){
 								currSquare = (currSquare+1)%k;
 								numdone++;
-								sum = sum+findMOLS4(1);
+								sum = sum+findMOLS4(1, true);
 								currSquare = (currSquare-1+k)%k;
 							}
 						}
@@ -2628,7 +2657,7 @@ void MOLS::printAllStatics(){
 
 int main(int argc,char *argv[]){
 
-//	MOLS threemols(6,3);
+ 	// MOLS threemols(8,3);
 	string filename = argv[1];
     MOLS threemols(filename);
 /*
@@ -2637,11 +2666,6 @@ int main(int argc,char *argv[]){
 	std::streambuf *coutbuf = std::cout.rdbuf(); //save old buf
 	std::cout.rdbuf(out.rdbuf());
 */
-
-
-
-
 	threemols.enumerateMOLS();
 	// std::cout.rdbuf(coutbuf); //reset to standard output again
-
 }
