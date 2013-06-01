@@ -2432,8 +2432,8 @@ void MOLS::updatePossiblePerms(){
 	}
 	cout<<endl;*/
 
-	/*if (currSquare==0&& partMOLS[k-1].size()==2)
-		return;
+	/*if (currSquare==1&& partMOLS[k-1].size()==2)
+		return 0;
 	else*/
 		detailedCount[counter].push_back(0);
 		detailedCount[counter].push_back(0);
@@ -2495,6 +2495,12 @@ void MOLS::updatePossiblePerms(){
 			}
 			else
 				numPolled = nofFeasible;
+
+			if (currSquare==0 && partMOLS[k-1].size() ==2){
+				numPolled = min(numVisited+numPolled, nofFeasible);
+				numVisited=0;
+			}
+
 
 
 			//int jump = (numVisited>0 ? nofFeasible /numVisited: 0);
@@ -2656,7 +2662,6 @@ void MOLS::printAllStatics(){
 }
 
 int main(int argc,char *argv[]){
-
  	// MOLS threemols(8,3);
 	string filename = argv[1];
     MOLS threemols(filename);
