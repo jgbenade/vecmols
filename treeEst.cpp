@@ -2496,6 +2496,7 @@ void MOLS::updatePossiblePerms(){
 				removeUniversal(sqSymPossPerms[currSquare][currUni][possPermIt]);
 			}
 		}
+
 		if (Visit && nofFeasible>0){
 
 			int numVisited=0;
@@ -2511,12 +2512,13 @@ void MOLS::updatePossiblePerms(){
 			else
 				numPolled = nofFeasible;
 
-			if (currSquare==k-1 && partMOLS[k-1].size() ==1){
+			//this if stops the full estimation, use dfor example for getting startrting point on level i  etc
+			if (currSquare==k-1 && partMOLS[k-1].size() ==2){
 				numPolled = min(numVisited+numPolled, nofFeasible);
 				numVisited=0;
 				int numtries = 0;
 
-				for (unsigned int possPermIt=0;  numtries <1 /*&& possPermIt<numdone possPermIt< sqSymPossPerms[currSquare][currUni].size()*/; /*++possPermIt*/
+				for (unsigned int possPermIt=0;  numtries <1 && possPermIt<nofFeasible ;
 						possPermIt= rand()%nofFeasible){
 					numtries++;
 					addUniversal(sqSymPossPerms[currSquare][currUni][feasiblePoss[possPermIt]]);
@@ -2524,15 +2526,19 @@ void MOLS::updatePossiblePerms(){
 					//cout<<" inc numdone";
 					if (isSmallest4()){
 						positionsFound++;
-						printDots(2*partMOLS[0].size());
-						cout<<positionsFound;
-						printDots(4);
+						cout<<positionsFound;cout<<" ";
+						for (unsigned int q =0; q<3; q++){
 
-						for (i=0; i<k; i++){
-							printPerm(partMOLS[i].back()	);
-							cout<<" ";
+							printDots(2*q);
+
+							//printDots(4);
+
+							for (i=0; i<k; i++){
+								printPerm(partMOLS[i][q]	);
+								cout<<" ";
+							}
+							cout<<endl;
 						}
-						cout<<endl;
 
 					}
 					//}
@@ -2540,8 +2546,6 @@ void MOLS::updatePossiblePerms(){
 				}
 			}
 			else{
-
-
 
 				//int jump = (numVisited>0 ? nofFeasible /numVisited: 0);
 

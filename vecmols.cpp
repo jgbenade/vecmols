@@ -40,7 +40,7 @@ private:
 
 	int currSquare;
 	int count_MOLS;
-	vector<int> branchCount_  ;
+	vector<long long int> branchCount_  ;
 	bool printOut;
 	vector<permutation> possibleShuffles;
 	vector<int> currentCS;
@@ -51,7 +51,7 @@ private:
 	vector<int> identity;
 	vector<int> identityIt;
 	vector<vector<vector<permutation> > > sqSymPossPerms;
-	vector<vector<int> > detailedCount;
+	//vector<vector<long long int> > detailedCount;
 	vector<int> numIsSmallest;
 	vector<int>  numIsSmallestTrue;
 
@@ -151,7 +151,7 @@ MOLS::MOLS( int n, int k){
 	sqSymPossPerms.resize(k, vector<vector<permutation> >(n) );
 	identityIt.resize(k, 0 );
 	identityIt[0]=1;
-	detailedCount.resize(n*k+1);
+	//detailedCount.resize(n*k+1);
 	 numIsSmallest.resize(n, 0) ;
 		  numIsSmallestTrue.resize(n, 0) ;
 
@@ -283,7 +283,7 @@ MOLS::MOLS( string filename){
 		}
 
 	sqSymPossPerms.resize(k, vector<vector<permutation> >(n) );
-	detailedCount.resize(n*k+1);
+	//detailedCount.resize(n*k+1);
 	numIsSmallest.resize(n, 0) ;
 	numIsSmallestTrue.resize(n, 0) ;
 
@@ -358,14 +358,14 @@ int MOLS::enumerateMOLS(void	){
 			findMOLS4();
 	}
 
-
+/*
 	vector<int>::const_iterator vit;
 	for (i=0; i< k*n; i++){
 		cout <<"@ ";
 		for (vit = detailedCount[i].begin(); vit!= detailedCount[i].end(); vit++)
 			cout<< *vit<< " ";
 		cout<< " opsies na "<<i/k<<"."<<i%k<<endl;
-	}
+	}*/
 
 	cout<< "# "<<count_MOLS << " MOLS found"<<endl;
     cout<< "# ";
@@ -2409,15 +2409,15 @@ void MOLS::findMOLS4(){
 	cout<<endl;*/
 
 	/*if (currSquare==0&& partMOLS[k-1].size()==2)
-		return;
-	else*/
-		detailedCount[counter].push_back(0);
+		return;*/
+	//else
+		//detailedCount[counter].push_back(0);
 
 
 	if (currSquare==0){
 
 		if (partMOLS[0].size()>0){
-			printDots(2*partMOLS[0].size());
+			/*printDots(2*partMOLS[0].size());
 			cout<<branchCount_[partMOLS[currSquare].size()*k+currSquare-1];
 			printDots(4);
 
@@ -2425,7 +2425,7 @@ void MOLS::findMOLS4(){
 				printPerm(partMOLS[i].back()	);
 				cout<<" ";
 			}
-			cout<<endl;
+			cout<<endl;*/
 
 			updatePossiblePerms();
   		}
@@ -2448,9 +2448,9 @@ void MOLS::findMOLS4(){
 					//if (checkRCS( (*possPermIt))){
  						addUniversal(sqSymPossPerms[currSquare][currUni][possPermIt]);
  						if (getSmallRelCS(partMOLS)){
- 							if (isSmallest4(true)){
+ 							if (isSmallest4()){
  								currSquare = (currSquare+1)%k;
- 								detailedCount[counter].back()++;
+ 								//detailedCount[counter].back()++;
 								findMOLS4( );
 								currSquare = (currSquare-1+k)%k;
 							}
@@ -2501,7 +2501,7 @@ void MOLS::findMOLS4(){
 
 			possibleShuffles = genRelevantPermutations(partMOLS[currSquare].front());
 			currSquare = (currSquare+1)%k;
-			detailedCount[counter].back()++;
+			//detailedCount[counter].back()++;
 			findMOLS4( );
 			currSquare = (currSquare-1+k)%k;
 			/*cout<<"Return from findmols structure"<<endl;
@@ -2527,9 +2527,9 @@ void MOLS::findMOLS4(){
 							if (checkOrthogonal(P)){
 									addUniversal(P);
 									if (getSmallRelCS(partMOLS)){
-										if (isSmallest4( )){
+										if (isSmallest4()){
 											currSquare = (currSquare+1)%k;
-											detailedCount[counter].back()++;
+											//detailedCount[counter].back()++;
 											findMOLS4( );
 											currSquare = (currSquare-1+k)%k;
 										}
@@ -2595,9 +2595,9 @@ void MOLS::printAllStatics(){
 
 int main(int argc,char *argv[]){
 
-	MOLS threemols(7,3);
+	//MOLS threemols(7,3);
 	string filename = argv[1];
-    //MOLS threemols(filename);
+   MOLS threemols(filename);
 /*
 	string outfile = "out103_1.txt";//+filename;
 	std::ofstream out(outfile.c_str());
