@@ -226,7 +226,6 @@ MOLS::MOLS( string filename){
 	ifstream infile;
 	infile.open(filename.c_str(), ios::in );
 
-
 	 if (infile.is_open())
 	  {
 		 if  ( infile.good() ){
@@ -612,29 +611,85 @@ void MOLS::permuteSymbols(vector<lsquare> &partMOLS, vector<lsquare> &newMOLS){
  // 1 < 2 - TRUE
 // 1 = 2 - TRUE
 // 1 > 2 - FALSE
+//TODO SOmewhere in here we need to take account of k>3 by shuffling squares 3...k into diff places.
+// maybe just store the universal that becomes the 0 universal in its post permuted form , sort check that it is smallest?
 bool MOLS::testPermuteMOLS(vector<lsquare> &pMOLS, permutation &rowPerm, permutation &colPerm ){
 	vector<int> permIt1(k,0);//arrays of iterators
-	permIt1[0]++;
+	permIt1[0]++; //this stores the current posistion in the squares
+
+	vector<int> secondEl(k,0);
+	//vector that keeps track of the second elements of the i-universals. we know u_i^k[0]=i for all k
+	// but we need to know that we can't just shuffle the squares. so check u_i^k[1], make sure they are in ascending order
+	vector<int> secondElInv(k, 0);
 
 	permutation invRowPerm = inverse(rowPerm);
-
-	int indOfOne =-1; bool found = false;
+	int indOfOne = invRowPerm[0];
+	bool found = false;
 	unsigned int  i=0;
 	unsigned int cs = 0;  //the number of the square currently being compared.
+	unsigned int  ci=0; // the number of the permutation mapped to the zeros
 
 	for (cs =0; cs<k; cs++){
 		sizes[cs] = pMOLS[cs].size();
 	}
+	//secondEl[cs]=partMOLS[cs][0][2];
 
-	indOfOne = invRowPerm[0];
+	//cout<<sizes[k-1]<<endl;
 
-	unsigned int  ci=0;
+	int deadwood = k-1;// this variable is used to assign a dummy ordering to the variables that dont have anything that maps to the 0 universal. Assign to them from the back of the oredering
+	//the first two stay the same because we did the relative cycle structures.
+	secondEl[0] = 1; secondElInv[0] =0;
+	secondEl[1] = 2; secondElInv[1] =1;
+	//cout<<sizes[k-1]<<endl;
+	for (int ic=2; ic<k;ic++){
+		if (sizes[ic]>0){
+
+			/*if (partMOLS[ic-1][0][1]> partMOLS[ic][0][1])
+				return false;*/
+
+			ci=0;
+			//Find the element that gets mapped to the 0-universal position
+			while(ci<sizes[ic]){
+				if (colPerm[pMOLS[ic][ci][indOfOne]]==0){
+					//cout<< "ci = "<< ci;
+					break;}
+				ci++;
+			}
+			if (ci< sizes[ic]){
+				//cout<<ic<<endl;
+				secondEl[ic]= colPerm[pMOLS[ic][ci][invRowPerm[1]] ];
+				//cout<<ic<<endl;
+			}
+			else {
+				secondEl[ic]= n; //so nothing gets mapped to 0
+				secondElInv[deadwood--] = ic;
+			}
+		}
+		else {
+			secondEl[ic]= -1; //if nothing in square ic yet, then nothing gets mapped to 0 trivially
+			secondElInv[deadwood--] = ic;
+		}
+	}
+
+	int num_found=2;
+	for (int ztwo =3; ztwo<n; ztwo++){ //ztwo is the second one in the zero universal
+		int sn;
+		for (sn=2; sn<k; sn++)
+			if (secondEl[sn]==ztwo)
+				break;
+
+		if (sn<k)
+			secondElInv[num_found++]=sn;
+	}
+
+
 	int diff;
 	for (cs = 1%k; true; cs=(cs+1)%k){//this goes on forever, break on when iterato reaches end
-
+		//when we reach beyond the last universal in the square return true
 		if (permIt1[cs] == partMOLS[cs].size() || permIt1[cs] == sizes[cs])
 			return true;
-		ci=0;
+
+		ci=0; //We are on the permIt[cs]-th universal of square cs, so this finds the element that gets mapped to that permIt[cs]-th position
 		while(ci<sizes[cs]){
 			if (colPerm[pMOLS[cs][ci][indOfOne]]==permIt1[cs]){
 				//cout<< "ci = "<< ci;
@@ -642,52 +697,52 @@ bool MOLS::testPermuteMOLS(vector<lsquare> &pMOLS, permutation &rowPerm, permuta
 			ci++;
 		}
 
-		if (ci< sizes[cs]){ //so weve found the one that gets a whatever in the first position
-			//permutation z(n, 0);
-			//z.resize(n);
-			//diffs.resize(n);
+		//if we found the one to map to the front, otherwise if it doenst exist there is a gap in the post permute square and we are done
+		if (ci< sizes[cs]){
+			//so weve found the one that gets a whatever in the first position
+			/*permutation z(n, 0);
 
-//			for (unsigned int  jj=0; jj<n; jj++){
-//				diffs[invRowPerm[rowPerm[jj]]] = partMOLS[cs][permIt1[cs]][ invRowPerm[rowPerm[jj]] ] - colPerm[pMOLS[cs][ci][rowPerm[jj]]];
-//				if (diffs[invRowPerm[rowPerm[jj]]] !=0){
-//                    //cout<< partMOLS[cs][permIt1[cs]][ rowPerm[jj]]<<"|"<<colPerm[pMOLS[cs][ci][jj]];
-//                    //cout<<"R"<<(diffs[invRowPerm[jj]]<0)<< " ";
-//                    return (diffs[invRowPerm[rowPerm[jj]]]<0);
-//                }
-//			}//cout<<"X"<< " ";
+			z.resize(n);
+			diffs.resize(n);
 
 			for (unsigned int  jj=0; jj<n; jj++){
+				diffs[invRowPerm[rowPerm[jj]]] = partMOLS[cs][permIt1[cs]][ invRowPerm[rowPerm[jj]] ] - colPerm[pMOLS[cs][ci][rowPerm[jj]]];
+				if (diffs[invRowPerm[rowPerm[jj]]] !=0){
+                    //cout<< partMOLS[cs][permIt1[cs]][ rowPerm[jj]]<<"|"<<colPerm[pMOLS[cs][ci][jj]];
+                    //cout<<"R"<<(diffs[invRowPerm[jj]]<0)<< " ";
+                    return (diffs[invRowPerm[rowPerm[jj]]]<0);
+                }
+			}//cout<<"X"<< " ";*/
 
-				//diffs[rowPerm[jj]] = partMOLS[cs][permIt1[cs]][ rowPerm[jj]] - colPerm[pMOLS[cs][ci][jj]];
-				//diffs[rowPerm[invRowPerm[jj]]] = partMOLS[cs][permIt1[cs]][ rowPerm[invRowPerm[jj]]] - colPerm[pMOLS[cs][ci][invRowPerm[jj]]];
 
-                if ((partMOLS[cs][permIt1[cs]][ rowPerm[invRowPerm[jj]]] - colPerm[pMOLS[cs][ci][invRowPerm[jj]]]) !=0){
+			for (unsigned int  jj=0; jj<n; jj++){
+			/*	diffs[rowPerm[jj]] = partMOLS[cs][permIt1[cs]][ rowPerm[jj]] - colPerm[pMOLS[cs][ci][jj]];
+				diffs[rowPerm[invRowPerm[jj]]] = partMOLS[cs][permIt1[cs]][ rowPerm[invRowPerm[jj]]] - colPerm[pMOLS[cs][ci][invRowPerm[jj]]];*/
+
+				if ((partMOLS[cs][permIt1[cs]][jj] - colPerm[pMOLS[secondElInv[cs]][ci][invRowPerm[jj]]]) !=0){
+               // if ((partMOLS[cs][permIt1[cs]][ rowPerm[invRowPerm[jj]]] - colPerm[pMOLS[cs][ci][invRowPerm[jj]]]) !=0){
+					/*cout<< partMOLS[cs][permIt1[cs]][ rowPerm[jj]]<<" | "<<colPerm[pMOLS[cs][ci][jj]]<<"Return "<<(diff<0);
+					cout<<"Return "<<(diffs[jj]<0);
+					return (diffs[rowPerm[invRowPerm[jj]]]<0);*/
+					return ((partMOLS[cs][permIt1[cs]][jj] - colPerm[pMOLS[secondElInv[cs]][ci][invRowPerm[jj]]])<0);
+				}
+				/*z[ rowPerm[jj] ] = colPerm[pMOLS[cs][ci][jj]];
+				printPerm(z);*/
+			}
+
+			/*printPerm(diffs);
+			for (unsigned int  jj=0; jj<n; jj++){
+				if (diffs[jj] !=0){
 					//cout<< partMOLS[cs][permIt1[cs]][ rowPerm[jj]]<<" | "<<colPerm[pMOLS[cs][ci][jj]]<<"Return "<<(diff<0);
 					//cout<<"Return "<<(diffs[jj]<0);
-					//return (diffs[rowPerm[invRowPerm[jj]]]<0);
-					return ((partMOLS[cs][permIt1[cs]][ rowPerm[invRowPerm[jj]]] - colPerm[pMOLS[cs][ci][invRowPerm[jj]]])<0);
+					return (diffs[jj]<0);
 				}
-				//z[ rowPerm[jj] ] = colPerm[pMOLS[cs][ci][jj]];
-				//printPerm(z);
-
-
 			}
-			//printPerm(diffs);
-//			for (unsigned int  jj=0; jj<n; jj++){
-//				if (diffs[jj] !=0){
-//					//cout<< partMOLS[cs][permIt1[cs]][ rowPerm[jj]]<<" | "<<colPerm[pMOLS[cs][ci][jj]]<<"Return "<<(diff<0);
-//					//cout<<"Return "<<(diffs[jj]<0);
-//					return (diffs[jj]<0);
-//				}
-//			}
-			//cout<< "Equal "<<cs<<ci<<endl;
+			cout<< "Equal "<<cs<<ci<<endl;*/
 		}
 		else return true;
-
 		permIt1[cs]++;
-
 	}
-
 	return true;
 }
 
@@ -1699,18 +1754,17 @@ bool MOLS::noSmallerRCS(permutation &smallestRCS, vector<lsquare> &pMOLS){
 
 	vector<lsquare> ordMOLS ;
 
+	//for all relative cs that may be smallest
 	for (testRel=RCSsquares.begin(); testRel!=RCSsquares.end(); testRel++){
 		// cout<<endl<<" "<<(*testRel)[0]<<" "<<(*testRel)[1]<<" "<<(*testRel)[2]<<" "<<(*testRel)[3] <<" ";
-
+		//if the order of the squares change
 		if ((*testRel)[0]!= currentOrder[0] || currentOrder[1]!=(*testRel)[1]){
 			currentOrder[0]=(*testRel)[0];
 			currentOrder[1]=(*testRel)[1];
 			ordMOLS = changeOrder(pMOLS, (*testRel)[0],(*testRel)[1]);
 		}
-
-
+		//"Standardize" into rolled up form
 		vector<lsquare> roMOLS(ordMOLS);
-
 		standardForm(roMOLS, (*testRel)[2],(*testRel)[3], *testPermsit);
 		/*cout<<"Before";
 		printMOLSPerms(partMOLS );
@@ -1723,14 +1777,15 @@ bool MOLS::noSmallerRCS(permutation &smallestRCS, vector<lsquare> &pMOLS){
 		cout<<"STD Form - "<<endl;printMOLSPerms(roMOLS);cout.flush();*/
 
 		list<permutation> allShuffles = getShuffles(smallestRCS, roMOLS[1].front());
+		//for all permutations that keep the structure of the first 2
 		for (permIt = allShuffles.begin(); permIt != allShuffles.end(); ++permIt) {
 			//vector<lsquare> tMOLS(roMOLS);
 			/*//permutation realShuffle = composition(inverse( *permIt),targetP );
 			//printPerm( *permIt);
 			//permuteMOLS(tMOLS, *permIt, *permIt);
  			b*/
-
 			//if (!comparePartialMOLS(partMOLS, tMOLS) )// if  part > temp
+
 			if (!testPermuteMOLS(roMOLS, *permIt, *permIt) )// if  part > temp
 			{
 				/*for (i=0; i<k; i++){
@@ -1818,17 +1873,17 @@ bool MOLS::noSmallerRCS(permutation &smallestRCS){
 
 bool MOLS::isSmallest4( ){
 
-if (currSquare == k-1	){
-	numIsSmallest[partMOLS[k-1].size()]++;
+	if (currSquare == k-1	){
+		numIsSmallest[partMOLS[k-1].size()]++;
 
-	if (!noSmallerRCS( partMOLS[1].front() )){
-		/*for (i=0; i<k; i++)
+		if (!noSmallerRCS( partMOLS[1].front() )){
+			/*for (i=0; i<k; i++)
 				printPerm(partMOLS[i].back());
 		cout << "smaller cs"<<endl;*/
 			return false;
 		}
-numIsSmallestTrue[partMOLS[k-1].size()]++;
-}
+		numIsSmallestTrue[partMOLS[k-1].size()]++;
+	}
 	return true;
 
 }
@@ -1962,10 +2017,10 @@ void MOLS::buildCurrentLS(){
 
 bool MOLS::checkFit( permutation &p){
 	if (n==0) return true;
+	if ( currSquare>3)
+		if (p[1]<partMOLS[currSquare-1][0][1])
+			return false;
 	int i= 0; //row
-
-
-
 	i=0;
 //	printMOLS(partMOLS); cout<<"Try to fit perm "; printPerm(p);cout<<endl;
 	for (unsigned int i=0;i< p.size(); i++){
@@ -2409,15 +2464,13 @@ void MOLS::findMOLS4(){
 	cout<<endl;*/
 
 	/*if (currSquare==0&& partMOLS[k-1].size()==2)
-		return;*/
-	//else
-		//detailedCount[counter].push_back(0);
-
+		return;
+	  else
+		detailedCount[counter].push_back(0);*/
 
 	if (currSquare==0){
-
 		if (partMOLS[0].size()>0){
-			/*printDots(2*partMOLS[0].size());
+			printDots(2*partMOLS[0].size());
 			cout<<branchCount_[partMOLS[currSquare].size()*k+currSquare-1];
 			printDots(4);
 
@@ -2425,17 +2478,15 @@ void MOLS::findMOLS4(){
 				printPerm(partMOLS[i].back()	);
 				cout<<" ";
 			}
-			cout<<endl;*/
+			cout<<endl;
 
 			updatePossiblePerms();
   		}
 	}
-/*
-	if (currSquare==0&& partMOLS[k-1].size()==2)
+	/*if (currSquare==0 && partMOLS[k-1].size()==1)
 		return;*/
 
 	//if this is the first universal iln the second square we look at the class representatives
-
 		//}
 
 		if (partMOLS[currSquare].size()>0)
@@ -2476,7 +2527,7 @@ void MOLS::findMOLS4(){
 
 			}
 		}
-    else {
+    else { //everything in else is for if inserting zero universals
         if(currSquare==1&& partMOLS[currSquare].size()==0	){
 		list<permutation>::iterator CSRit;
 		int j=1;
@@ -2517,7 +2568,8 @@ void MOLS::findMOLS4(){
 		}
 	}
 	else{ //not u_0^(1)
-		permutation P(identity) ;
+		//permutation P(identity) ;
+		permutation P(partMOLS[currSquare-1].front()) ;
 		if (partMOLS[currSquare].size()==0 ){
 		//	if (!testPerms.size()==0){
 				//cout << " sq "<< (currSquare+1)<< ", "<< testPerms.size()<<endl;
@@ -2595,18 +2647,15 @@ void MOLS::printAllStatics(){
 
 int main(int argc,char *argv[]){
 
-	//MOLS threemols(7,3);
+	MOLS threemols(8,5);
 	string filename = argv[1];
-   MOLS threemols(filename);
+   //MOLS threemols(filename);
 /*
 	string outfile = "out103_1.txt";//+filename;
 	std::ofstream out(outfile.c_str());
 	std::streambuf *coutbuf = std::cout.rdbuf(); //save old buf
 	std::cout.rdbuf(out.rdbuf());
 */
-
-
-
 
 	threemols.enumerateMOLS();
 	// std::cout.rdbuf(coutbuf); //reset to standard output again
