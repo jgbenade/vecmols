@@ -35,9 +35,8 @@ private:
 	vector<lsquare> partMOLS;
 	vector<lsquare> tempMOLS;
 	vector<vector<vector<int> > > currLS;
-	list<permutation> cycleStructureReps;
+	vector<permutation> cycleStructureReps;
 	//list<vector <lsquare> > completedMOLS;
-
 	int currSquare;
 	int count_MOLS;
 	vector<long long int> branchCount_  ;
@@ -91,12 +90,14 @@ private:
 	void  standardForm(vector<lsquare> &partMOLS, int rowUp, int pos ,permutation &origP ) ;
 	vector<int>  rowMeets(permutation &p1, permutation &p2) ;
 	int  compareCS(permutation &p , vector<int> &targetCS) ;
+	int  compareCS(vector<int> &pCS , vector<int> &targetCS, bool t) ;
 	list<permutation>  getShuffles(permutation &pOrig, permutation &pNow) ;
 	bool  noSmallerRCS(permutation &smallestRCS ) ;
 	bool  noSmallerRCS(permutation &smallestRCS, vector<lsquare> &pMOLS ) ;
 	bool  isSmallest4() ;
 	bool  isSmallest4(bool t) ;
-	bool  isSmallestConjugateMOLS(vector<lsquare> partMOLS) ;
+	bool  isSmallestConjugateMOLS(vector<lsquare> &pMOLS) ;
+	bool  isSmallestConjugateMOLS1(vector<lsquare> &pMOLS) ;
 	bool  checkFit( permutation &p) ;
 	bool  checkOrthogonal(permutation &P) ;
 	bool  checkRCS(permutation &P) ;
@@ -127,6 +128,8 @@ private:
 	bool rcsOrthog(permutation &p1, permutation &p2);
 	static bool permutationComp (permutation p1, permutation    p2);
 	void updatePossiblePerms();
+	bool  isSmallest4(permutation &smallestRCS, vector<lsquare> &pMOLS);
+	bool  getSmallRelCS( vector<lsquare>& pMOLS, permutation& mapTo );
 } ;
 
 inline bool MOLS::My::permutationComparator    (permutation p1, permutation    p2) { return p1[0] < p2[0]; }
@@ -170,7 +173,7 @@ MOLS::MOLS( int n, int k){
 	vector<int> cycles(n+1, 0);
 	cycles[1] =1;
 	genCRS(cycles, 2, n-1);
-	list<permutation>::const_iterator CSRit;
+	vector<permutation>::iterator CSRit;
 
 	if (printOut){
 		cout << "u0^1 list has "<< cycleStructureReps.size()<< " universals - ";
@@ -290,7 +293,7 @@ MOLS::MOLS( string filename){
 	vector<int> cycles(n+1, 0);
 	cycles[1] =1;
 	genCRS(cycles, 2, n-1);
-	list<permutation>::const_iterator CSRit;
+	vector<permutation>::iterator CSRit;
 	if (printOut){
 		cout << "u0^1 list has "<< cycleStructureReps.size()<< " universals - ";
 		for (CSRit=cycleStructureReps.begin(); CSRit!= cycleStructureReps.end(); ++CSRit){
@@ -1152,9 +1155,7 @@ void MOLS::genCRS(vector<int> &curr, int ctr, int rem ){
 void MOLS::getCycleStructure(permutation &p, vector<int> &nofCycles, map<int, vector<vector<int> > > &cycleLength_cycles_map ){
 	//bool visited[n+1] ={0};
 	vector<bool> visited (n+1, false);
-	permutation::const_iterator permIt;
-	vector<int> permArr(n+1, 0);
-	//int permArr[n]={0};
+
 	int i=0;
 
 	for (i=0; i<n; i++){
@@ -1175,15 +1176,16 @@ void MOLS::getCycleStructure(permutation &p, vector<int> &nofCycles, map<int, ve
 					visited[j] = true;
 					j = p[j];
 				}while (thisCycle.front() !=j);
-
+				//visited[j] = true;
 				nofCycles[thisCycle.size()]++;
 				cycleLength_cycles_map[thisCycle.size()].push_back(thisCycle);
 			}
 		}
 	}
 
-	//for (i=0; i<n+1; i++)
-	//	cout<< nofCycles[i]<< " ";
+	/*for (i=0; i<n+1; i++)
+		cout<< nofCycles[i];
+	cout<< " ";*/
 
 
 }
@@ -1520,6 +1522,18 @@ int MOLS::compareCS(permutation &p , vector<int> &targetCS){
 	return 0; //the same
 
 }
+//boolean just says that p is alreasy a CS, not just a perm
+int MOLS::compareCS(permutation &pCS , vector<int> &targetCS, bool t){
+	//printPerm(pCS); printPerm(targetCS);
+	for (unsigned int i=0; i<n; i++){
+		//cout<<targetCS[i]<<"<>" <<thisCS[i];
+		if (! (targetCS[i] == pCS[i])	)
+			return targetCS[i]-pCS[i];
+	}
+
+	return 0; //the same
+
+}
 
 list<vector<int> > MOLS::getSmallRelCS( vector<lsquare> &pMOLS, list<permutation> &listP){
 	permutation targetRCS(pMOLS[1].front());
@@ -1584,8 +1598,10 @@ list<vector<int> > MOLS::getSmallRelCS( vector<lsquare> &pMOLS, list<permutation
 		}
 	}
  }
-
 bool MOLS::getSmallRelCS( vector<lsquare>& pMOLS ){
+	return getSmallRelCS(   pMOLS, currentCS );
+}
+bool MOLS::getSmallRelCS( vector<lsquare>& pMOLS, permutation& mapTo ){
  	//permutation targetRCS(pMOLS[1].front());
 	RCSperms.clear();
 	RCSsquares.clear();
@@ -1608,7 +1624,7 @@ bool MOLS::getSmallRelCS( vector<lsquare>& pMOLS ){
 					//if this rcs is equal to smallest store in list
 					//if (!lexicographical_compare(rcsV.begin(), rcsV.end(), targetRCS.begin(), targetRCS.end())
 					//		and !lexicographical_compare(targetRCS.begin(), targetRCS.end(), rcsV.begin(), rcsV.end())){
-					int comparison = compareCS(rcsV, currentCS);
+					int comparison = compareCS(rcsV, mapTo);
 					if (comparison<0){
  						return false;
 					}
@@ -1870,6 +1886,17 @@ bool MOLS::noSmallerRCS(permutation &smallestRCS){
 	return noSmallerRCS(smallestRCS, partMOLS);
 }
 
+//only used by issmallestconjugate
+bool MOLS::isSmallest4(permutation &smallestRCS, vector<lsquare> &pMOLS){
+
+	numIsSmallest[partMOLS[k-1].size()]++;
+	if (!noSmallerRCS(smallestRCS, pMOLS ) ){
+		return false;
+	}
+	numIsSmallestTrue[partMOLS[k-1].size()]++;
+
+	return true;
+}
 
 bool MOLS::isSmallest4( ){
 
@@ -1908,11 +1935,78 @@ bool MOLS::isSmallest4(bool t ){
 
 }
 
+bool MOLS::isSmallestConjugateMOLS(vector<lsquare> &pMOLS ){
+	//return true;
+	int maxCS=cycleStructureReps.size();
+	currentCS.clear();currentCS.resize(n+1, 0);
+	vector<lsquare> nMOLS(k, vector<vector<int> >(n, vector<int>(n,0)));
+	vector<vector<int> > oa(k+2, vector<int>(n*n, 0));
+	map<int, vector<vector<int> > > dummy_cycles_map;
+	map<int, vector<vector<int> > > dummy_cycles_map2;
+	vector<int> thisCS(n+1, 0);
+	getCycleStructure(partMOLS[1].front(),  currentCS, dummy_cycles_map );
+	//cout<<endl<<"Current cs ";printPerm(partMOLS[1].front());cout <<": "; printPerm(currentCS);
 
-bool MOLS::isSmallestConjugateMOLS(vector<lsquare> partMOLS ){
+	//populate the orthoganal array from the current MOLS
+	for (int i =0; i<n*n; i++){
+		 oa[0][i] = i/n;
+		 oa[1][i] = i%n;
+		 for (int j =0; j<k; j++){
+			 oa[2+j][i] = currLS[j][oa[0][i]][oa[1][i]];
+		 }
+	}
+	/*for (int i =0; i<k+2; i++){
+		for (int j =0; j<n*n; j++)
+			cout<< oa[i][j]<<" ";
+		cout<<endl;
+	}*/
+	permutation oaPerm;
+	for (int i=0; i<k+2; i++)
+		oaPerm.push_back(i);
+
+	for (unsigned int i =0; i< cycleStructureReps.size(); i++){
+		getCycleStructure(cycleStructureReps[i],  thisCS, dummy_cycles_map2 );
+		if (compareCS(thisCS, currentCS, true)> 0){
+			 maxCS=i; break;
+		}
+		thisCS.clear();thisCS.resize(n+1, 0);
+	}
+
+	while (next_permutation(oaPerm.begin(), oaPerm.end())){
+		//cout<<"permutations "; printPerm(oaPerm);cout<<endl;
+		for (int j =0; j<k; j++){
+			for (int i =0; i<n*n; i++){
+				// the new value, number of universal is	oa[oaPerm[k]][i]
+				// the new row (position in universal ) is oa[oaPerm[0]][i]
+				// the new column, value in that position in oa[oaPerm[1]][i]
+				nMOLS[j][oa[oaPerm[j+2]][i]][oa[oaPerm[0]][i]] = oa[oaPerm[1]][i] ;
+			}
+		}
+		//printMOLSPerms(nMOLS);
+
+		for (unsigned int i =0; i< maxCS; i++){
+			//we want to try and map it to all of the smaller and equal csreps
+			getCycleStructure(cycleStructureReps[i],  thisCS, dummy_cycles_map );
+			//int cnt = compareCS(thisCS, currentCS, true); cout<<"Z"<<cnt;
+			if (getSmallRelCS(nMOLS,  thisCS )){
+				if (!isSmallest4(cycleStructureReps[i], nMOLS)){
+					//currentCS.clear();currentCS.resize(n+1, 0);
+					return false;
+				}
+			}
+			thisCS.clear(); thisCS.resize(n+1, 0);
+
+			//dummy_cycles_map.clear();
+		} //end for csreps
+	}//end while
+	//currentCS.clear();currentCS.resize(n+1, 0);
+	return true;
+}
+
+bool MOLS::isSmallestConjugateMOLS1(vector<lsquare>& partMOLS ){
 	return true;
 
- 	int i;
+ 	/*int i;
  	vector<lsquare> smallestMOLS ;
 	for (i=0; i<k; i++){
 		smallestMOLS[i] = partMOLS[i];
@@ -1921,17 +2015,15 @@ bool MOLS::isSmallestConjugateMOLS(vector<lsquare> partMOLS ){
 	list<permutation> allCSR; //list of all smalle s u0^1 cycle structures
 	//int cycles[n+1];
 	vector<int> cycles(n+1, 0);
-	/*for (i=0; i<=n+1; i++)
-		cycles[i]=0;*/
+	for (i=0; i<=n+1; i++)
+		cycles[i]=0;
 	cycles[1] =1;
 	genCRS(cycles, 2, n-1); //we may only have one overlap
 
-	list<permutation>::iterator CSRit;
+	vector<permutation>::iterator CSRit;
 
 	permutation smallestRCS = partMOLS[1].front();
 	vector<lsquare> t1MOLS , newMOLS;
-
-
 
     vector<vector<int> > oa (k+2, vector<int>(n*n)	);
     vector<vector<int> > oanew(k+2, vector<int>(n*n));
@@ -1946,7 +2038,6 @@ bool MOLS::isSmallestConjugateMOLS(vector<lsquare> partMOLS ){
 			p[1].push_back(i);
 			p[2].push_back(i);
 	}
-
 
 	p[0][0]=2; p[0][2] = 0; //(i,j,k) - (k,, j, i...)
 	p[1][1]=2; p[1][2] = 1; //(i,j,k) - (k,, j, i...)
@@ -1978,9 +2069,9 @@ bool MOLS::isSmallestConjugateMOLS(vector<lsquare> partMOLS ){
 		for (CSRit=allCSR.begin(); CSRit!= allCSR.end(); ++CSRit){
 			//printPerm(*CSRit); cout.flush();
 			if (!noSmallerRCS((*CSRit), t1MOLS )){
-				/*for (i=0; i<k; i++)
+				for (i=0; i<k; i++)
 		    				printPerm(partMOLS[i].back());
-		    		cout << "smaller cs"<<endl;*/
+		    		cout << "smaller cs"<<endl;
 				cout <<"Not smallest conjugate";
 				return false;
 			}
@@ -1993,7 +2084,7 @@ bool MOLS::isSmallestConjugateMOLS(vector<lsquare> partMOLS ){
 		perm_ctr++;
 	}
 
-	return true;
+	return true;*/
 }
 
 void MOLS::buildCurrentLS(){
@@ -2433,24 +2524,29 @@ void MOLS::updatePossiblePerms(){
 
 void MOLS::findMOLS4(){
 	int counter = (partMOLS[currSquare].size())*k+currSquare-1;
- 	branchCount_[(partMOLS[currSquare].size())*k+currSquare-1]++;
+ 	//branchCount_[(partMOLS[currSquare].size())*k+currSquare-1]++;
 
 	int i=0;
 
 	if (partMOLS[k-1].size()==n) //if the last square is filled in completely, contains n permutations
-		{
-			if (isSmallestConjugateMOLS(partMOLS)){
-				//if (isSmallest2<k>(partMOLS)){
-					printMOLS(partMOLS);
-					count_MOLS++;
-					//addToCompletedMOLS();
-					return;
+	{
+		if (isSmallestConjugateMOLS(partMOLS)){
+			//if (isSmallest2<k>(partMOLS)){
+			branchCount_[(partMOLS[currSquare].size())*k+currSquare-1]++;
 
-				//}
-			}
-			else	return;
+			printMOLS(partMOLS);
+			count_MOLS++;
+			//addToCompletedMOLS();
+			return;
 
+			//}
 		}
+		else	return;
+
+	}
+	else
+		branchCount_[(partMOLS[currSquare].size())*k+currSquare-1]++;
+
 
 	/*printDots(2*partMOLS[0].size());
 	cout<<branchCount_[partMOLS[currSquare].size()*k+currSquare-1];
@@ -2463,7 +2559,7 @@ void MOLS::findMOLS4(){
 	}
 	cout<<endl;*/
 
-	/*if (currSquare==0&& partMOLS[k-1].size()==2)
+	/*if (currSquare==0&& partMOLS[k-1].size()==1)
 		return;
 	  else
 		detailedCount[counter].push_back(0);*/
@@ -2529,7 +2625,7 @@ void MOLS::findMOLS4(){
 		}
     else { //everything in else is for if inserting zero universals
         if(currSquare==1&& partMOLS[currSquare].size()==0	){
-		list<permutation>::iterator CSRit;
+		vector<permutation>::iterator CSRit;
 		int j=1;
 		for (CSRit=cycleStructureReps.begin(); CSRit!= cycleStructureReps.end(); ++CSRit){
 			//++CSRit; ++CSRit;++CSRit;
@@ -2647,7 +2743,7 @@ void MOLS::printAllStatics(){
 
 int main(int argc,char *argv[]){
 
-	MOLS threemols(8,5);
+	MOLS threemols(7,4 );
 	string filename = argv[1];
    //MOLS threemols(filename);
 /*
