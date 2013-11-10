@@ -1,3 +1,54 @@
+// This file is part of BOINC.
+// http://boinc.berkeley.edu
+// Copyright (C) 2008 University of California
+//
+// BOINC is free software; you can redistribute it and/or modify it
+// under the terms of the GNU Lesser General Public License
+// as published by the Free Software Foundation,
+// either version 3 of the License, or (at your option) any later version.
+//
+// BOINC is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+// See the GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License
+// along with BOINC.  If not, see <http://www.gnu.org/licenses/>.
+
+// This program serves as both
+// - An example BOINC application, illustrating the use of the BOINC API
+// - A program for testing various features of BOINC
+//
+// NOTE: this file exists as both
+// boinc/apps/upper_case.cpp
+// and
+// boinc_samples/example_app/uc2.cpp
+// If you update one, please update the other!
+
+// The program converts a mixed-case file to upper case:
+// read "in", convert to upper case, write to "out"
+//
+// command line options
+// --run_slow: sleep 1 second after each character
+// --cpu_time N: use about N CPU seconds after copying files
+// --early_exit: exit(10) after 30 chars
+// --early_crash: crash after 30 chars
+// --trickle_up: sent a trickle-up message
+// --trickle_down: receive a trickle-up message
+//
+
+#ifdef _WIN32
+#include "boinc_win.h"
+#else
+#include "config.h"
+#include <cstdio>
+#include <cctype>
+#include <ctime>
+#include <cstring>
+#include <cstdlib>
+#include <csignal>
+#include <unistd.h>
+
 #include <iostream>
 #include <fstream>
 #include <algorithm>
@@ -8,26 +59,61 @@
 #include <fstream>
 #include <string>
 #include <list>
+#endif
 
+#include "str_util.h"
+#include "util.h"
+#include "filesys.h"
+#include "boinc_api.h"
+#include "mfile.h"
+#include "graphics2.h"
+
+
+#ifdef APP_GRAPHICS
+#include "uc2.h"
+UC_SHMEM* shmem;
+#endif
+
+using std::string;
 using namespace std;
 
 typedef vector<int> permutation ;
 typedef vector<permutation> lsquare;
-int main(int argc,char *argv[]);
+
+#define CHECKPOINT_FILE "vecmols_state"
+#define INPUT_FILENAME "in"
+#define OUTPUT_FILENAME "out"
+
+bool run_slow = false;
+bool early_exit = false;
+bool early_crash = false;
+bool early_sleep = false;
+bool trickle_up = false;
+bool trickle_down = false;
+bool critical_section = false;    // run most of the time in a critical section
+double cpu_time =2, comp_result;
+double start_time, end_time;
+
+//MFILE out;
+//FILE* state, *infile;
 
 class MOLS {
 public:
 	typedef vector<int> permutation ;
 	typedef vector<permutation> lsquare;
 	MOLS(int n, int k) ;
-	MOLS( std::string filename);
+	MOLS(FILE* infile, MFILE out);
+	MOLS(FILE* infile, char* output_p);
 	~MOLS();
-	int enumerateMOLS(void);
+	int enumerateMOLS();
 	void  printAllStatics();
+	vector<vector<vector< int> > > sqSymCurrUni;
+	int restart(FILE* state,bool t);
+	void printMOLSPerms( vector<lsquare> mols  , FILE* outfile );
+
 	struct My
 	{
 	    static bool permutationComparator (permutation p1, permutation    p2);
-	    static bool squareComparator    (vector<permutation> s1, vector<permutation> s2) ;
 	};
 
 private:
@@ -35,9 +121,13 @@ private:
 	int k;
 	vector<lsquare> partMOLS;
 	vector<lsquare> tempMOLS;
+	vector<lsquare> root;
 	vector<vector<vector<int> > > currLS;
 	vector<permutation> cycleStructureReps;
-	//list<vector <lsquare> > completedMOLS;
+	char* output_path;
+	//MFILE out;
+	//vector<vector <lsquare> > completedMOLS;
+
 	int currSquare;
 	int count_MOLS;
 	vector<long long int> branchCount_  ;
@@ -54,13 +144,17 @@ private:
 	//vector<vector<long long int> > detailedCount;
 	vector<int> numIsSmallest;
 	vector<int>  numIsSmallestTrue;
-	vector<bool> squareChanged;
-
+	clock_t dtime, prev_time;
+	int send_checkpoint; //0 means no, 1 means next time, 2 means done up to limit, 3 means written out, done checkpointing
+	long nof_calls_made;
+	const static long nof_calls_limit = 5000000000; // 5.10e5 is so .7 sek, 5.10e8 is 300sek, 5.109 so 3100 sek (op 83.9)
+	//const static long nof_calls_limit = 50000000;
 
 	int printUniversals(lsquare &l);
 	void printPerm(permutation p);
 	void printLS(lsquare &l);
 	void printMOLSPerms( vector<lsquare> mols   );
+
 	void printMOLS( vector<lsquare> mols  );
 	bool isOrthogonal(permutation perm);
 	permutation composition(permutation  &p1, permutation &p2);
@@ -95,13 +189,12 @@ private:
 	int  compareCS(permutation &p , vector<int> &targetCS) ;
 	int  compareCS(vector<int> &pCS , vector<int> &targetCS, bool t) ;
 	list<permutation>  getShuffles(permutation &pOrig, permutation &pNow) ;
-	//list<permutation>  *getShuffles(permutation &pOrig, permutation &pNow) ;
 	bool  noSmallerRCS(permutation &smallestRCS ) ;
 	bool  noSmallerRCS(permutation &smallestRCS, vector<lsquare> &pMOLS ) ;
 	bool  isSmallest4() ;
 	bool  isSmallest4(bool t) ;
-	bool  isSmallestConjugateMOLS(vector<lsquare> &pMOLS) ;
-	bool  isSmallestConjugateMOLS1(vector<lsquare> &pMOLS) ;
+	bool isSmallest4(permutation &smallestRCS, vector<lsquare> &pMOLS);
+	bool  isSmallestConjugateMOLS(vector<lsquare>& pMOLS) ;
 	bool  checkFit( permutation &p) ;
 	bool  checkOrthogonal(permutation &P) ;
 	bool  checkRCS(permutation &P) ;
@@ -110,7 +203,7 @@ private:
 	void  buildPossibleSquare( vector<vector<int> > &square ) ;
 	void  generatePossiblePermsToInsertRec(vector<vector<int> > &square, permutation &p, int row,  list<permutation> &possiblePermList ) ;
 	void  generatePossiblePermsToInsert(  list<permutation> &possiblePermList ) ;
-	void  findMOLS4() ;
+	void  findMOLS4( ) ;
 	void buildCurrentLS();
 	list<vector<int> >  getSmallRelCS( vector<lsquare> &pMOLS, list<permutation> &listP);
 	void removeUniversal(permutation &p	);
@@ -120,30 +213,433 @@ private:
 	void generatePossiblePermsLSRec(permutation &p, int row,  list<permutation> &possiblePermList, vector<bool> &left );
 	void  generatePossiblePermsToInsert2(  list<permutation> &possiblePermList ) ;
 	void generatePossiblePermsLSRec2(permutation &p, int row,  list<permutation> &possiblePermList, vector<vector<int> > &poss, vector<bool> &left );
-	vector<permutation> generatePossiblePermsToInsert3(int square   ) ;
+	vector<permutation>  generatePossiblePermsToInsert3(int square   ) ;
 	//void generatePossiblePermsToInsert3(int square   ) ;
 	void generatePossiblePermsLSRec3(permutation &p, int row,  vector<permutation> &possiblePermList, vector<vector<int> > &poss, vector<bool> &left );
 	std::vector<std::string> & split(const std::string &s, char delim, std::vector<std::string> &elems);
 	std::vector<std::string>   split(const std::string &s, char delim );
 	permutation  strtoPerm(string s);
 	void updateLS();
-	permutation *flatten(permutation &pNow);
+	permutation flatten(permutation &pNow);
 	bool getSmallRelCS( vector<lsquare>& pMOLS );
 	bool rcsOrthog(permutation &p1, permutation &p2);
 	static bool permutationComp (permutation p1, permutation    p2);
 	void updatePossiblePerms();
-	bool  isSmallest4(permutation &smallestRCS, vector<lsquare> &pMOLS);
 	bool  getSmallRelCS( vector<lsquare>& pMOLS, permutation& mapTo );
+	double calculate_fraction();
 } ;
 
+
+
+void printMOLSPerms( vector<lsquare> mols, FILE* outfile, int n, int k  ){
+	//int k = mols;
+	int m =0;
+	//cout << endl;
+	//int n = mols[0].front().size();
+	stringstream outp[k][n];
+	for (m=0; m<k; m++){
+			vector<vector<int> >  L(n, vector<int>(n,0));
+			int uni_ctr = 0, row_ctr = 0;
+			int i,j;
+			for ( i =0; i<n; i++){
+				for ( j=0; j<n; j++){
+					L[i][j]=-1;
+				}
+			}
+
+			for(unsigned int i =0; i< mols[m].size(); i++){
+					for(unsigned int j= 0; j< mols[m][i].size(); j++){
+					outp[m][i] << mols[m][i][j];
+				}
+			}
+
+	}
+	int i=0, j=0;
+	for ( i =0; i<n; i++){
+		string s;
+		for ( j =0; j<k; j++){
+			s =s+ outp[j][i].str()+ (j<k-1? " ":"") ;
+		}
+		if (s.size()>k)
+			fprintf(outfile, "%s\n", s.c_str());
+	}
+}
+
+// do about .5 seconds of computing
+// (note: I needed to add an arg to this;
+// otherwise the MS C++ compiler optimizes away
+// all but the first call to it!)
+//
+static double do_some_computing(int foo) {
+    double x = 3.14159*foo;
+    int i;
+    for (i=0; i<50000; i++) {
+        x += 5.12313123;
+        x *= 0.5398394834;
+    }
+    return x;
+}
+//do_checkpoint(out, sqSymCurrUni);
+//int do_checkpoint(MFILE& mf, int k, int n, vector<vector<vector<int> > > sqSymCurrUni) {
+int do_checkpoint(int k, int n, vector<vector<vector< int> > > sqSymCurrUni, vector<long long int>& branchCount, clock_t dtime, int countMOLS, vector<vector<vector< int> > > root, int& send_checkpoint, int nof_calls) {
+
+    int retval;
+    string resolved_name;
+    char output_path[512];
+    boinc_resolve_filename(OUTPUT_FILENAME, output_path, sizeof(output_path));
+    string outsign = "B";
+    //send_checkpoint = true; //!@ 
+    FILE* f;	
+    if (send_checkpoint==1){
+    	cout <<  "sending checkpoint as result -  nofcallsmade"<<endl;
+    	f = boinc_fopen(output_path, "ab");
+
+    	send_checkpoint = 3;
+    }
+    else{
+    	if (send_checkpoint==2){
+    	    	cout <<  "sending checkpoint as result - limit"<<endl;
+    	    	f = boinc_fopen(output_path, "ab");
+    	    	send_checkpoint = 3;
+    	    	outsign = "A";
+    	    }
+    	else
+    		f = boinc_fopen("temp", "ab");
+    }
+    	
+    if (!f) {cout<< "file open failed"<<endl;return 1;}
+    fprintf(f, "@%s\n%d %d\n", outsign.c_str(), n, k);
+    printMOLSPerms(root, f,n,k);
+    fprintf(f, "#Positions\n");
+    for (int j=0; j<n; j++){
+    	for (int i=0; i<k; i++ ){
+    		fprintf(f, "%d %d %d ", sqSymCurrUni[i][j][0], sqSymCurrUni[i][j][2], sqSymCurrUni[i][j][1]);
+    	}
+    	fprintf(f, "\n");
+    }
+    fprintf(f, "%d \n",nof_calls);
+    fprintf(f, "#Branchcounts\n");
+    for (int i=0; i<branchCount.size(); i++ ){
+    	//cout<< branchCount[i] << " ";
+        fprintf(f, "%ld ", branchCount[i]);
+    }
+    //	cout<<endl;
+    fprintf(f, "\n");
+    fprintf(f, "#Total time\n");
+   // "%.3f seconds \n", (clock() - dtime+prev_time)/1000000.0
+    fprintf(f, "%.3f seconds\n", dtime/1000000.0 );
+    fprintf(f, "#MOLS found\n");
+    fprintf(f, "%d\n", countMOLS);
+
+    //fprintf(f, "%d", nchars);
+    fclose(f);
+
+    // retval = mf.flush();
+    //if (retval) return retval;
+    
+    boinc_resolve_filename_s(CHECKPOINT_FILE, resolved_name);
+    retval = boinc_rename("temp", resolved_name.c_str());
+    //cout <<"on return send_valis="<< send_checkpoint<<endl;
+    //this->out.flush();
+    // retval = boinc_rename("temp", resolved_name);
+    if (retval) return retval;
+
+    return 0;
+}
+
+#ifdef APP_GRAPHICS
+void update_shmem() {
+    if (!shmem) return;
+
+    // always do this; otherwise a graphics app will immediately
+    // assume we're not alive
+    shmem->update_time = dtime();
+
+    // Check whether a graphics app is running,
+    // and don't bother updating shmem if so.
+    // This doesn't matter here,
+    // but may be worth doing if updating shmem is expensive.
+    //
+    if (shmem->countdown > 0) {
+        // the graphics app sets this to 5 every time it renders a frame
+        shmem->countdown--;
+    } else {
+        return;
+    }
+    shmem->fraction_done = boinc_get_fraction_done();
+    shmem->cpu_time = boinc_worker_thread_cpu_time();;
+    boinc_get_status(&shmem->status);
+}
+#endif
+
+int main(int argc, char **argv) {
+	start_time=dtime();
+    int i;
+    int c, nchars = 0, retval, n;
+    double fsize, fd;
+    char line[64];
+    char input_path[512], output_path[512], chkpt_path[512], buf[256];
+    MFILE out;
+    FILE* state, *infile;
+
+    for (i=0; i<argc; i++) {
+        if (strstr(argv[i], "early_exit")) early_exit = true;
+        if (strstr(argv[i], "early_crash")) early_crash = true;
+        if (strstr(argv[i], "early_sleep")) early_sleep = true;
+        if (strstr(argv[i], "run_slow")) run_slow = true;
+        if (strstr(argv[i], "critical_section")) critical_section = true;
+        if (strstr(argv[i], "cpu_time")) {
+            cpu_time = atof(argv[++i]);
+        }
+        if (strstr(argv[i], "trickle_up")) trickle_up = true;
+        if (strstr(argv[i], "trickle_down")) trickle_down = true;
+    }
+    fprintf(stderr, "%s app started; CPU time %f, flags:%s%s%s%s%s%s%s\n",
+        boinc_msg_prefix(buf, sizeof(buf)),
+        cpu_time,
+        early_exit?" early_exit":"",
+        early_crash?" early_crash":"",
+        early_sleep?" early_sleep":"",
+        run_slow?" run_slow":"",
+        critical_section?" critical_section":"",
+        trickle_up?" trickle_up":"",
+        trickle_down?" trickle_down":""
+    );
+
+    retval = boinc_init();
+    if (retval) {
+        fprintf(stderr, "%s boinc_init returned %d\n",
+            boinc_msg_prefix(buf, sizeof(buf)), retval
+        );
+        exit(retval);
+    }
+    boinc_set_min_checkpoint_period(160);
+    // open the input file (resolve logical name first)
+    //
+    boinc_resolve_filename(INPUT_FILENAME, input_path, sizeof(input_path));
+    infile = boinc_fopen(input_path, "r");
+    if (!infile) {
+        fprintf(stderr,
+            "%s Couldn't find input file, resolved name %s.\n",
+            boinc_msg_prefix(buf, sizeof(buf)), input_path
+        );
+        exit(-1);
+    }
+
+    // get size of input file (used to compute fraction done)
+    file_size(input_path, fsize);
+
+    boinc_resolve_filename(OUTPUT_FILENAME, output_path, sizeof(output_path));
+	cout<<"out"<<endl;
+    // See if there's a valid checkpoint file.
+    // If so seek input file and truncate output file
+    //
+    boinc_resolve_filename(CHECKPOINT_FILE, chkpt_path, sizeof(chkpt_path));
+    state = boinc_fopen(chkpt_path, "r");
+    /*if (state) {
+        n = fscanf(state, "%d", &nchars);
+        fclose(state);
+    }
+    if (state && n==1) {
+        fseek(infile, nchars, SEEK_SET);
+        boinc_truncate(output_path, nchars);
+        retval = out.open(output_path, "ab");
+        fprintf(stderr,"worker: restarting at %d \n", i_start);
+    } else {
+    	fprintf(stderr,"worker: Starting from scratch.  \n");
+        retval = out.open(output_path, "wb");
+    }*/
+    if (state) {
+    	//n = fscanf(state, "%d", &nchars);
+    	//read checkpoint file and do something
+    	//fclose(state);
+    	retval = out.open(output_path, "ab");
+    	out.close();
+    	fprintf(stderr,"worker: restarting at %d \n", 1);
+    	cout << "restarting from state"<<endl;
+    	MOLS threemols(infile, output_path); //change def to make it a checkpoint-start
+    	threemols.restart(state, true);
+
+    	//threemols.enumerateMOLS(out);
+    }
+    else {
+    	fprintf(stderr,"worker: Starting from scratch.  \n");
+
+    	retval = out.open(output_path, "wb");
+    	out.close(); //destroy current outfile
+
+    	MOLS threemols(infile, output_path);
+    	cout<<"Starting"<<endl;
+    	threemols.enumerateMOLS( );
+
+    }
+    if (retval) {
+        fprintf(stderr, "%s APP: upper_case output open failed:\n",
+            boinc_msg_prefix(buf, sizeof(buf))
+        );
+        fprintf(stderr, "%s resolved name %s, retval %d\n",
+            boinc_msg_prefix(buf, sizeof(buf)), output_path, retval
+        );
+        perror("open");
+        exit(1);
+    }
+
+#ifdef APP_GRAPHICS
+    // create shared mem segment for graphics, and arrange to update it
+    //
+    shmem = (UC_SHMEM*)boinc_graphics_make_shmem("uppercase", sizeof(UC_SHMEM));
+    if (!shmem) {
+        fprintf(stderr, "%s failed to create shared mem segment\n",
+            boinc_msg_prefix(buf, sizeof(buf))
+        );
+    }
+    update_shmem();
+    boinc_register_timer_callback(update_shmem);
+#endif
+
+    /*for (i=0; ; i++) {
+	std::cout<<i;
+	fgets(line,64,infile);
+	if (feof(infile)) break;
+	out.printf(line);
+    	out.printf( "lll \n");
+    }*/
+	//MOLS threemols(infile, out);
+    //MOLS threemols(7,3);
+	//string filename = argv[1];
+
+	//threemols.enumerateMOLS(out);
+
+
+   /* for (i=0; ; i++) {
+        c = fgetc(infile);
+
+        if (c == EOF) break;
+        c = toupper(c);
+        out._putchar(c);
+	out._putchar('G');
+        nchars++;
+        if (run_slow) {
+            boinc_sleep(1.);
+        }
+
+        if (early_exit && i>30) {
+            exit(-10);
+        }
+
+        if (early_crash && i>30) {
+            boinc_crash();
+        }
+        if (early_sleep && i>30) {
+            boinc_disable_timer_thread = true;
+            while (1) boinc_sleep(1);
+        }
+
+        if (boinc_time_to_checkpoint()) {
+            retval = do_checkpoint(out, nchars);
+            if (retval) {
+                fprintf(stderr, "%s APP: upper_case checkpoint failed %d\n",
+                    boinc_msg_prefix(buf, sizeof(buf)), retval
+                );
+                exit(retval);
+            }
+            boinc_checkpoint_completed();
+        }
+
+        fd = nchars/fsize;
+        if (cpu_time) fd /= 2;
+        boinc_fraction_done(fd);
+    }*/
+
+    /*retval = out.flush();
+    if (retval) {
+        fprintf(stderr, "%s APP: upper_case flush failed %d\n",
+            boinc_msg_prefix(buf, sizeof(buf)), retval
+        );
+        exit(1);
+    }*/
+
+    if (trickle_up) {
+        boinc_send_trickle_up(
+            const_cast<char*>("example_app GG"),
+            const_cast<char*>("sample trickle message GG")
+        );
+    }
+
+    if (trickle_down) {
+        boinc_sleep(10);
+        retval = boinc_receive_trickle_down(buf, sizeof(buf));
+        if (!retval) {
+            fprintf(stderr, "Got trickle-down message: %s\n", buf);
+        }
+    }
+
+    // burn up some CPU time if needed
+    //
+    /*if (cpu_time) {
+        double start = dtime();
+        for (i=0; ; i++) {
+            double e = dtime()-start;
+            if (e > cpu_time) break;
+            fd = .5 + .5*(e/cpu_time);
+            boinc_fraction_done(fd);
+
+            if (boinc_time_to_checkpoint()) {
+                retval = do_checkpoint(out, nchars);
+                if (retval) {
+                    fprintf(stderr, "%s APP: upper_case checkpoint failed %d\n",
+                        boinc_msg_prefix(buf, sizeof(buf)), retval
+                    );
+                    exit(1);
+                }
+                boinc_checkpoint_completed();
+            }
+            if (critical_section) {
+                boinc_begin_critical_section();
+            }
+            comp_result = do_some_computing(i);
+            if (critical_section) {
+                boinc_end_critical_section();
+            }
+        }
+    }*/
+    boinc_fraction_done(1);
+#ifdef APP_GRAPHICS
+    update_shmem();
+#endif
+    boinc_finish(0);
+}
+
+#ifdef _WIN32
+int WINAPI WinMain(
+    HINSTANCE hInst, HINSTANCE hPrevInst, LPSTR Args, int WinMode
+) {
+    LPSTR command_line;
+    char* argv[100];
+    int argc;
+
+    command_line = GetCommandLine();
+    argc = parse_command_line(command_line, argv);
+    return main(argc, argv);
+}
+#endif
+
+
+
+
+
+
+
 inline bool MOLS::My::permutationComparator    (permutation p1, permutation    p2) { return p1[0] < p2[0]; }
-inline bool MOLS::My::squareComparator    (vector<permutation> s1, vector<permutation> s2) { return s1[0][1] < s2[0][1]; }
 
 inline bool MOLS::permutationComp    (permutation p1, permutation    p2) { return p1[0] < p2[0]; }
 
 MOLS::~MOLS(){}
 
 MOLS::MOLS( int n, int k){
+	//nof_calls_limit = 500000;
+    nof_calls_made=0;
+	send_checkpoint = 0;
 	printOut = true;
 	this->n = n;
 	this->k = k;
@@ -161,8 +657,9 @@ MOLS::MOLS( int n, int k){
 	identityIt[0]=1;
 	//detailedCount.resize(n*k+1);
 	 numIsSmallest.resize(n, 0) ;
-		  numIsSmallestTrue.resize(n, 0) ;
-		  squareChanged.resize(k,true);
+	 numIsSmallestTrue.resize(n, 0) ;
+	 sqSymCurrUni.resize(k, vector<vector<int> >(n, vector<int>(3, -1)));
+	 prev_time = (clock()-clock())/1000000.0;
 
     for (unsigned int i=0; i<n; i++){
 		identity.push_back(i);
@@ -174,6 +671,7 @@ MOLS::MOLS( int n, int k){
 	for (i =0; i<k; i++){
  		partMOLS.push_back(emptyLS);
 		tempMOLS.push_back(emptyLS);
+		root.push_back(emptyLS);
 	}
 	//Get cycle structure representatives for U_0^1
 	vector<int> cycles(n+1, 0);
@@ -212,25 +710,70 @@ std::vector<std::string> MOLS::split(const std::string &s, char delim) {
 }
 
 permutation MOLS::strtoPerm(string s){
+	//vector<string> vec = split(s, '-');
 	int i;
 	permutation p;
-	for(i=0; i<s.length(); i++){
+	for(i=0; i<n; i++){
 		p.push_back(  s[i]-'0');
 	}
 	return p;
 }
-
-MOLS::MOLS( string filename){
-
-	//this->filename = filename;
+MOLS::MOLS(FILE* infile, MFILE out){
+	//nof_calls_limit = 500000;
+        nof_calls_made=0;
 	printOut = true;
-	/*this->n = 5;
-	this->k = 3;
-	currSquare = 0;
-	count_MOLS = 0;
-	branchCount_[100] = {0} ;*/
+	send_checkpoint = 0;
 
+	char sc[100];
+	string s;
 	int i;
+	//Readall the existing mols untill we get to the start of the checkpoint
+	fgets(sc,100,infile);
+	s= (string) sc;
+	while(sc[0] !='@'){		
+		out.printf( sc);
+		fgets(sc,100,infile);
+	}
+	out.flush(); out.close();
+	
+	for (i=0; ; i++) {
+		if (i==0){
+			fgets(sc,100,infile);
+			s = (string) sc;
+			vector<string> vec = split(s,' ');
+			n =  vec[0][0]- '0';
+			if (n==1) n=10;
+			k = vec[1][0] - '0';
+
+			int i;
+			for (i =0; i<k; i++){
+				lsquare l1, l2, l3;
+				partMOLS.push_back(l1);
+				tempMOLS.push_back(l2);
+				root.push_back(l3);
+			}
+			sqSymCurrUni.resize(k, vector<vector<int> >(n, vector<int>(3, -1)));
+		}
+		else{
+			fgets(sc,100,infile);
+			if (feof(infile)) break;
+			s = (string) sc;
+			if (s[0]=='#') break;
+			cout<< s;
+			vector<string> vec = split(s,' ');
+			int numUni = vec.size();
+
+			for (int j=0; j< numUni; j++){
+				partMOLS[j].push_back(strtoPerm(vec[j]));
+				root[j].push_back(strtoPerm(vec[j]));
+			}
+			currSquare = numUni%k;
+		}
+	}
+
+	prev_time = 0;
+
+	/*int i;
 	string s;
 	ifstream infile;
 	infile.open(filename.c_str(), ios::in );
@@ -269,13 +812,11 @@ MOLS::MOLS( string filename){
 	    infile.close();
 	  }
 	 else
-		 cout<< "File not found"<<endl;
+		 cout<< "File not found"<<endl;*/
 
 	printMOLSPerms(partMOLS);
-	cout<< n<< k;
-
+	//cout<< n<< k;
 	//possibleShuffles = genRelevantPermutations(partMOLS[1][0]);
-
 	count_MOLS = 0;
 	branchCount_.resize(n*k, 0);
 	currentCS.resize(n+1, 0);
@@ -291,11 +832,10 @@ MOLS::MOLS( string filename){
 		}
 
 	sqSymPossPerms.resize(k, vector<vector<permutation> >(n) );
+
 	//detailedCount.resize(n*k+1);
 	numIsSmallest.resize(n, 0) ;
 	numIsSmallestTrue.resize(n, 0) ;
-	  squareChanged.resize(k,true);
-
 
 	//Get cycle structure representatives for U_0^1
 	vector<int> cycles(n+1, 0);
@@ -309,45 +849,158 @@ MOLS::MOLS( string filename){
 		}
 		cout<<endl;
 	}
+
 	//Initialize currLS
  	updateLS();
-
- 	updatePossiblePerms();
-
-	//Initialise symbSqRC
+  	updatePossiblePerms();
+  	printAllStatics();
+  	rewind(infile);//move thepointerbackout of the positions
+  	restart(infile,false);
+ 	//Initialise symbSqRC
 //	symbSqRC.resize(n, vector<vector<vector<int> > >(k, vector<vector<int> >(n, vector<int>(n, 1))));
 	//completedMOLS.clear();
+ 	//cout<<"done"<<endl;
+	return;
+}
 
+MOLS::MOLS(FILE* infile, char* output_p){
+	//nof_calls_limit = 500000;
+        nof_calls_made=0;
+	//this->filename = filename;
+	printOut = true;
+	send_checkpoint = 0;
+	this->output_path = output_p;
+
+	char sc[100];
+	string s;
+	int i;	
+	MFILE out;
+	//out.open(output_path, "wb");
+	cout<<"a"<<endl;
+	//skip all the first lines, copyall the found mols over to outfile
+	fgets(sc,200,infile);
+	//s= (string) sc;
+	while(sc[0]!='@'){
+		cout<<"XX"<<sc<<endl;
+		//out.printf( sc);
+		fgets(sc,200,infile);		
+	}
+	//cout<<"done while"<<endl;
+	//out.flush(); out.close();
+	//cout<<"a"<<endl;
+	for (i=0; ; i++) {
+		if (i==0){
+			fgets(sc,200,infile);
+			s = (string) sc;
+			cout << "SR"<<s<<endl;
+			vector<string> vec = split(s,' ');
+			n =  vec[0][0]- '0';
+			if (n==1) n=10;
+			k = vec[1][0] - '0';
+			cout<<"SR"<<n<<k<<endl;
+			for (unsigned int j =0; j<k; j++){
+				lsquare l1, l2, l3;
+				partMOLS.push_back(l1);
+				tempMOLS.push_back(l2);
+				root.push_back(l3);
+			}
+			sqSymCurrUni.resize(k, vector<vector<int> >(n, vector<int>(3, -1)));
+			cout<<"Done reading"<<endl;
+		}
+		else{
+			fgets(sc,200,infile);
+			if (feof(infile)) break;
+			s = (string) sc;
+			if (sc[0]=='#') break;
+			cout<< "Comp " <<s<<endl;
+			vector<string> vec = split(s,' ');
+			int numUni = vec.size();
+
+			for (int j=0; j< numUni; j++){
+				partMOLS[j].push_back(strtoPerm(vec[j]));
+				root[j].push_back(strtoPerm(vec[j]));
+			}
+			currSquare = numUni%k;
+		}
+	}
+	cout<<"a"<<endl;
+	prev_time = 0;
+
+	printMOLSPerms(partMOLS);
+	//cout<< n<< k;
+	//possibleShuffles = genRelevantPermutations(partMOLS[1][0]);
+	count_MOLS = 0;
+	branchCount_.resize(n*k, 0);
+	currentCS.resize(n+1, 0);
+	RCSsquares.clear();
+	RCSperms.clear();
+	z.resize(n);
+	diffs.resize(n);
+	sizes.resize(n);
+	identityIt.resize(k, 0 );
+	identityIt[0]=1;
+	for (unsigned int i=0; i<n; i++){
+			identity.push_back(i);
+		}
+
+	sqSymPossPerms.resize(k, vector<vector<permutation> >(n) );
+
+	//detailedCount.resize(n*k+1);
+	numIsSmallest.resize(n, 0) ;
+	numIsSmallestTrue.resize(n, 0) ;
+
+	//Get cycle structure representatives for U_0^1
+	vector<int> cycles(n+1, 0);
+	cycles[1] =1;
+	genCRS(cycles, 2, n-1);
+	vector<permutation>::iterator CSRit;
+	if (printOut){
+		cout << "u0^1 list has "<< cycleStructureReps.size()<< " universals - ";
+		for (CSRit=cycleStructureReps.begin(); CSRit!= cycleStructureReps.end(); ++CSRit){
+			printPerm(*CSRit);
+		}
+		cout<<endl;
+	}
+
+	//Initialize currLS
+ 	updateLS();
+  	updatePossiblePerms();
+  	printAllStatics();
+  	rewind(infile);//move thepointerbackout of the positions
+  	restart(infile,false);
+ 	//Initialise symbSqRC
+//	symbSqRC.resize(n, vector<vector<vector<int> > >(k, vector<vector<int> >(n, vector<int>(n, 1))));
+	//completedMOLS.clear();
+ 	//cout<<"done"<<endl;
 	return;
 }
 
 void MOLS::updateLS(){
-	currLS.resize(k, vector<vector<int> > (n , vector<int>(n, n)));
-	int   i;
+ 	currLS.resize(k, vector<vector<int> > (n , vector<int>(n, n)));
+ 	int   i;
 	for (i=0; i<k; i++){
  		//		for(universalIt=partMOLS[i].begin(); universalIt != partMOLS[i].end(); ++universalIt){
 		for(unsigned int j =0; j< partMOLS[i].size(); j++){
-			for(unsigned int jj= 0; jj< partMOLS[i][j].size(); jj++){//(partMOLS[i][j]).begin(); perm_it != (partMOLS[i][j]).end(); ++perm_it){
+  			for(unsigned int jj= 0; jj< partMOLS[i][j].size(); jj++){//(partMOLS[i][j]).begin(); perm_it != (partMOLS[i][j]).end(); ++perm_it){
+				//cout<<partMOLS[i][j][jj]<<"-";				cout.flush();
 				currLS[i][jj][partMOLS[i][j][jj]] = j;
 			}
-
 		}
 	}
 
 }
 
-int MOLS::enumerateMOLS(void	){
+int MOLS::enumerateMOLS(){
 /*	string outfile = filename+ ".out.txt";
 	std::ofstream out(outfile);
 	std::streambuf *coutbuf = std::cout.rdbuf(); //save old buf
 	std::cout.rdbuf(out.rdbuf());*/
-
-	clock_t t;
-	t = clock();
+	//this->out = out;
+	cout<<"starting enumeration "<< prev_time<< endl;
+	dtime = clock();
 	cout<<   k << " MOLS of order "<< n<<endl;
-
 	int i;
-	count_MOLS =0;
+	//count_MOLS =0;
 
 	if (partMOLS[0].size()==0){
 		permutation ss;
@@ -360,36 +1013,58 @@ int MOLS::enumerateMOLS(void	){
 	}
 	else{
 		if (partMOLS[1].size()>0){
-			//map<int, vector<vector<int> > > dummy_cycles_map;
-			//getCycleStructure(partMOLS[1].front(),  currentCS, dummy_cycles_map );
-			getCycleStructure(partMOLS[1].front(),  currentCS );
+			map<int, vector<vector<int> > > dummy_cycles_map;
+			getCycleStructure(partMOLS[1].front(),  currentCS, dummy_cycles_map );
 			possibleShuffles = genRelevantPermutations(partMOLS[1].front());
 		}
-		//if (isSmallest4())
-			findMOLS4();
+
+ 		//accout for funny behaviour on first branch
+		int dec = -1;
+		for (i=0; i<k; i++)
+			dec = dec+root[i].size();
+		branchCount_[dec] = -1;
+		/////
+
+		cout<<"about to call findMOLS - "<< dec<< " send_scheckpoint:"<< send_checkpoint<<", "<<nof_calls_made<<endl;
+		findMOLS4();
 	}
-
-/*
-	vector<int>::const_iterator vit;
-	for (i=0; i< k*n; i++){
-		cout <<"@ ";
-		for (vit = detailedCount[i].begin(); vit!= detailedCount[i].end(); vit++)
-			cout<< *vit<< " ";
-		cout<< " opsies na "<<i/k<<"."<<i%k<<endl;
-	}*/
-
+	cout<<"Backfrom findmols"<<endl;
+	if (send_checkpoint<1){ //ifwe are sending the checkpoint, then the out file is created by do checkpoint
+	MFILE out;
+	out.open(output_path, "ab");
+	out.printf("@A\n");
+	out.printf("#Branchcounts\n");
+	for (i=0; i<n*k;i++){
+		cout<<branchCount_[i]<<" ";
+		out.printf( "%d ", branchCount_[i] );
+	} out.printf("\n");
+	out.printf("#Total time\n");
+	out.printf( "%.3f seconds \n", (clock() - dtime+prev_time)/1000000.0  ); 
+	cout<< (clock() - dtime+prev_time)/1000000.0<<endl;
+	out.printf("#MOLS found\n");
+	out.printf("%d" , count_MOLS)	;
+	out.flush(); out.close();
+	}
+	/*	
+	out.printf( "# %d %d MOLS of order %d found \n",count_MOLS, k,n );//this->out.flush();
 	cout<< "# "<<count_MOLS << " MOLS found"<<endl;
     cout<< "# ";
-	for (i=0; i<n*k;i++)
+    out.printf( "# " );
+	for (i=0; i<n*k;i++){
 		cout<<branchCount_[i]<<" ";
-	cout<<endl;
+		out.printf( "%d ", branchCount_[i] );
+	}
+	cout<<endl;out.printf( "\n" );
 	for (i=0; i< n; i++){
 		cout<<"# "<< branchCount_[k-1 +i*k] <<" takke op vlak "<<i<< " | "<< numIsSmallest[i]<<" "<<numIsSmallestTrue[i]<< " "<< (numIsSmallestTrue[i]*1.)/numIsSmallest[i]<<endl;
+		out.printf( "# %d takke op vlak %d | %d %d %f \n", branchCount_[k-1 +i*k], i,numIsSmallest[i],numIsSmallestTrue[i], (numIsSmallestTrue[i]*1.)/numIsSmallest[i]  );
 	}
-
-	t = clock() - t;
-	cout<<"# "<<  t/1000000.0 << " seconds"<< endl;
-
+	//dtime = clock() - dtime;
+	cout<<"# "<<  (clock() - dtime+prev_time)/1000000.0 << " seconds"<< endl;
+	out.printf( "# %.3f seconds \n", (clock() - dtime+prev_time)/1000000.0  ); out.flush();
+	out.flush();out.close();
+	cout<< count_MOLS;
+	*/
 	return count_MOLS;
 
 }
@@ -419,6 +1094,13 @@ void MOLS::printPerm(permutation p){
 	}
 	cout<<" ";
 }
+/*string MOLS::printPerm(permutation p , boolean t){
+	string s ="";
+	for (unsigned int j=0; j<p.size(); j++){
+		s=s+p[j];
+	}
+	return s;
+}*/
 
 void MOLS::printLS(lsquare & l){
 	//int n = l.front().size();
@@ -461,10 +1143,44 @@ void MOLS::printLS(lsquare & l){
 
 }
 
+void MOLS::printMOLSPerms( vector<lsquare> mols, FILE* outfile  ){
+	//int k = mols;
+	int m =0;
+	//cout << endl;
+	//int n = mols[0].front().size();
+	stringstream outp[k][n];
+	for (m=0; m<k; m++){
+			vector<vector<int> >  L(n, vector<int>(n,0));
+			int uni_ctr = 0, row_ctr = 0;
+			int i,j;
+			for ( i =0; i<n; i++){
+				for ( j=0; j<n; j++){
+					L[i][j]=-1;
+				}
+			}
+
+			for(unsigned int i =0; i< mols[m].size(); i++){
+					for(unsigned int j= 0; j< mols[m][i].size(); j++){
+					outp[m][i] << mols[m][i][j];
+				}
+			}
+
+	}
+	int i=0, j=0;
+	for ( i =0; i<n; i++){
+		string s;
+		for ( j =0; j<k; j++){
+			s =s+ outp[j][i].str()+ " ";
+		}
+		if (s.size()>k)
+			fprintf(outfile, "%s\n", s.c_str());
+	}
+}
+
 void MOLS::printMOLSPerms( vector<lsquare> mols  ){
 	//int k = mols;
 	int m =0;
-	cout << endl;
+	//cout << endl;
 	//int n = mols[0].front().size();
 	stringstream outp[k][n];
 	for (m=0; m<k; m++){
@@ -511,33 +1227,41 @@ void MOLS::printMOLSPerms( vector<lsquare> mols  ){
 }
 
 void MOLS::printMOLS( vector<lsquare> mols  ){
-	int m;stringstream outp[k][n];
+	int m;
+	stringstream outp[k][n];
 	for (m=0; m<k; m++){
-			//if (mols[m].size()>0){
+		//if (mols[m].size()>0){
 
-				int i,j;
-				for ( i =0; i<n; i++){
-					for ( j=0; j<n; j++){
-						if (currLS[m][i][j]>=  0 )
-							//cout <<  L[i][j]   <<" "<< (j==n-1? "\\\\" : "& ");
-							outp[m][i]<<currLS[m][i][j]<<" ";
-						else
-							outp[m][i]<<  "- ";
-						//cout <<    "- "<< (j==n-1? "\\\\" : "& ");
-					}
-
-				}
-			//}
-			//else cout<< "Empty"<< endl;
-		}
-		int i=0, j=0;
+		int i,j;
 		for ( i =0; i<n; i++){
-			for ( j =0; j<k; j++){
-				cout<<outp[j][i].str()<<"\t";
+			for ( j=0; j<n; j++){
+				if (currLS[m][i][j]>=  0 )
+					//cout <<  L[i][j]   <<" "<< (j==n-1? "\\\\" : "& ");
+					outp[m][i]<<currLS[m][i][j]<<" ";
+				else
+					outp[m][i]<<  "- ";
+				//cout <<    "- "<< (j==n-1? "\\\\" : "& ");
 			}
-			cout<<endl;
+
 		}
-		cout <<"*******************************"<<endl;
+		//}
+		//else cout<< "Empty"<< endl;
+	}
+
+	MFILE out;
+	out.open(output_path, "ab");
+	int i=0, j=0;
+	for ( i =0; i<n; i++){
+		for ( j =0; j<k; j++){
+			cout<<outp[j][i].str()<<"\t";
+		    out.printf("%s \t",outp[j][i].str().c_str());
+		}
+		cout<<endl;
+		out.printf("\n");
+	}
+	cout <<"*******************************"<<endl;
+	out.printf("*****************************\n");
+	out.flush(); out.close();
 
 }
 
@@ -623,82 +1347,29 @@ void MOLS::permuteSymbols(vector<lsquare> &partMOLS, vector<lsquare> &newMOLS){
  // 1 < 2 - TRUE
 // 1 = 2 - TRUE
 // 1 > 2 - FALSE
-//TODO SOmewhere in here we need to take account of k>3 by shuffling squares 3...k into diff places.
-// maybe just store the universal that becomes the 0 universal in its post permuted form , sort check that it is smallest?
 bool MOLS::testPermuteMOLS(vector<lsquare> &pMOLS, permutation &rowPerm, permutation &colPerm ){
 	vector<int> permIt1(k,0);//arrays of iterators
-	permIt1[0]++; //this stores the current posistion in the squares
-
-	vector<int> secondEl(k,0);
-	//vector that keeps track of the second elements of the i-universals. we know u_i^k[0]=i for all k
-	// but we need to know that we can't just shuffle the squares. so check u_i^k[1], make sure they are in ascending order
-	vector<int> secondElInv(k, 0);
+	permIt1[0]++;
 
 	permutation invRowPerm = inverse(rowPerm);
-	int indOfOne = invRowPerm[0];
-	bool found = false;
+
+	int indOfOne =-1; bool found = false;
 	unsigned int  i=0;
 	unsigned int cs = 0;  //the number of the square currently being compared.
-	unsigned int  ci=0; // the number of the permutation mapped to the zeros
 
 	for (cs =0; cs<k; cs++){
 		sizes[cs] = pMOLS[cs].size();
 	}
-	//secondEl[cs]=partMOLS[cs][0][2];
 
-	//cout<<sizes[k-1]<<endl;
+	indOfOne = invRowPerm[0];
 
-	int deadwood = k-1;// this variable is used to assign a dummy ordering to the variables that dont have anything that maps to the 0 universal. Assign to them from the back of the oredering
-	//the first two stay the same because we did the relative cycle structures.
-	secondEl[0] = 1; secondElInv[0] =0;
-	secondEl[1] = 2; secondElInv[1] =1;
-	//cout<<sizes[k-1]<<endl;
-	for (int ic=2; ic<k;ic++){
-		if (sizes[ic]>0){
-			/*if (partMOLS[ic-1][0][1]> partMOLS[ic][0][1])
-				return false;*/
-			ci=0;
-			//Find the element that gets mapped to the 0-universal position
-			while(ci<sizes[ic]){
-				if (colPerm[pMOLS[ic][ci][indOfOne]]==0){
-					//cout<< "ci = "<< ci;
-					break;}
-				ci++;
-			}
-			if (ci< sizes[ic]){
-				//cout<<ic<<endl;
-				secondEl[ic]= colPerm[pMOLS[ic][ci][invRowPerm[1]] ];
-				//cout<<ic<<endl;
-			}
-			else {
-				secondEl[ic]= n; //so nothing gets mapped to 0
-				secondElInv[deadwood--] = ic;
-			}
-		}
-		else {
-			secondEl[ic]= -1; //if nothing in square ic yet, then nothing gets mapped to 0 trivially
-			secondElInv[deadwood--] = ic;
-		}
-	}
-
-	int num_found=2;
-	for (int ztwo =3; ztwo<n; ztwo++){ //ztwo is the second one in the zero universal
-		int sn;
-		for (sn=2; sn<k; sn++)
-			if (secondEl[sn]==ztwo)
-				break;
-
-		if (sn<k)
-			secondElInv[num_found++]=sn;
-	}
-
+	unsigned int  ci=0;
 	int diff;
 	for (cs = 1%k; true; cs=(cs+1)%k){//this goes on forever, break on when iterato reaches end
-		//when we reach beyond the last universal in the square return true
+
 		if (permIt1[cs] == partMOLS[cs].size() || permIt1[cs] == sizes[cs])
 			return true;
-
-		ci=0; //We are on the permIt[cs]-th universal of square cs, so this finds the element that gets mapped to that permIt[cs]-th position
+		ci=0;
 		while(ci<sizes[cs]){
 			if (colPerm[pMOLS[cs][ci][indOfOne]]==permIt1[cs]){
 				//cout<< "ci = "<< ci;
@@ -706,56 +1377,56 @@ bool MOLS::testPermuteMOLS(vector<lsquare> &pMOLS, permutation &rowPerm, permuta
 			ci++;
 		}
 
-		//if we found the one to map to the front, otherwise if it doenst exist there is a gap in the post permute square and we are done
-		if (ci< sizes[cs]){
-			//so weve found the one that gets a whatever in the first position
-			/*permutation z(n, 0);
+		if (ci< sizes[cs]){ //so weve found the one that gets a whatever in the first position
+			//permutation z(n, 0);
+			//z.resize(n);
+			//diffs.resize(n);
 
-			z.resize(n);
-			diffs.resize(n);
-
-			for (unsigned int  jj=0; jj<n; jj++){
-				diffs[invRowPerm[rowPerm[jj]]] = partMOLS[cs][permIt1[cs]][ invRowPerm[rowPerm[jj]] ] - colPerm[pMOLS[cs][ci][rowPerm[jj]]];
-				if (diffs[invRowPerm[rowPerm[jj]]] !=0){
-                    //cout<< partMOLS[cs][permIt1[cs]][ rowPerm[jj]]<<"|"<<colPerm[pMOLS[cs][ci][jj]];
-                    //cout<<"R"<<(diffs[invRowPerm[jj]]<0)<< " ";
-                    return (diffs[invRowPerm[rowPerm[jj]]]<0);
-                }
-			}//cout<<"X"<< " ";*/
-
+//			for (unsigned int  jj=0; jj<n; jj++){
+//				diffs[invRowPerm[rowPerm[jj]]] = partMOLS[cs][permIt1[cs]][ invRowPerm[rowPerm[jj]] ] - colPerm[pMOLS[cs][ci][rowPerm[jj]]];
+//				if (diffs[invRowPerm[rowPerm[jj]]] !=0){
+//                    //cout<< partMOLS[cs][permIt1[cs]][ rowPerm[jj]]<<"|"<<colPerm[pMOLS[cs][ci][jj]];
+//                    //cout<<"R"<<(diffs[invRowPerm[jj]]<0)<< " ";
+//                    return (diffs[invRowPerm[rowPerm[jj]]]<0);
+//                }
+//			}//cout<<"X"<< " ";
 
 			for (unsigned int  jj=0; jj<n; jj++){
-			/*	diffs[rowPerm[jj]] = partMOLS[cs][permIt1[cs]][ rowPerm[jj]] - colPerm[pMOLS[cs][ci][jj]];
-				diffs[rowPerm[invRowPerm[jj]]] = partMOLS[cs][permIt1[cs]][ rowPerm[invRowPerm[jj]]] - colPerm[pMOLS[cs][ci][invRowPerm[jj]]];*/
 
-				if ((partMOLS[cs][permIt1[cs]][jj] - colPerm[pMOLS[secondElInv[cs]][ci][invRowPerm[jj]]]) !=0){
-               // if ((partMOLS[cs][permIt1[cs]][ rowPerm[invRowPerm[jj]]] - colPerm[pMOLS[cs][ci][invRowPerm[jj]]]) !=0){
-					/*cout<< partMOLS[cs][permIt1[cs]][ rowPerm[jj]]<<" | "<<colPerm[pMOLS[cs][ci][jj]]<<"Return "<<(diff<0);
-					cout<<"Return "<<(diffs[jj]<0);
-					return (diffs[rowPerm[invRowPerm[jj]]]<0);*/
-					return ((partMOLS[cs][permIt1[cs]][jj] - colPerm[pMOLS[secondElInv[cs]][ci][invRowPerm[jj]]])<0);
-				}
-				/*z[ rowPerm[jj] ] = colPerm[pMOLS[cs][ci][jj]];
-				printPerm(z);*/
-			}
+				//diffs[rowPerm[jj]] = partMOLS[cs][permIt1[cs]][ rowPerm[jj]] - colPerm[pMOLS[cs][ci][jj]];
+				//diffs[rowPerm[invRowPerm[jj]]] = partMOLS[cs][permIt1[cs]][ rowPerm[invRowPerm[jj]]] - colPerm[pMOLS[cs][ci][invRowPerm[jj]]];
 
-			/*printPerm(diffs);
-			for (unsigned int  jj=0; jj<n; jj++){
-				if (diffs[jj] !=0){
+                if ((partMOLS[cs][permIt1[cs]][ rowPerm[invRowPerm[jj]]] - colPerm[pMOLS[cs][ci][invRowPerm[jj]]]) !=0){
 					//cout<< partMOLS[cs][permIt1[cs]][ rowPerm[jj]]<<" | "<<colPerm[pMOLS[cs][ci][jj]]<<"Return "<<(diff<0);
 					//cout<<"Return "<<(diffs[jj]<0);
-					return (diffs[jj]<0);
+					//return (diffs[rowPerm[invRowPerm[jj]]]<0);
+					return ((partMOLS[cs][permIt1[cs]][ rowPerm[invRowPerm[jj]]] - colPerm[pMOLS[cs][ci][invRowPerm[jj]]])<0);
 				}
+				//z[ rowPerm[jj] ] = colPerm[pMOLS[cs][ci][jj]];
+				//printPerm(z);
+
+
 			}
-			cout<< "Equal "<<cs<<ci<<endl;*/
+			//printPerm(diffs);
+//			for (unsigned int  jj=0; jj<n; jj++){
+//				if (diffs[jj] !=0){
+//					//cout<< partMOLS[cs][permIt1[cs]][ rowPerm[jj]]<<" | "<<colPerm[pMOLS[cs][ci][jj]]<<"Return "<<(diff<0);
+//					//cout<<"Return "<<(diffs[jj]<0);
+//					return (diffs[jj]<0);
+//				}
+//			}
+			//cout<< "Equal "<<cs<<ci<<endl;
 		}
 		else return true;
+
 		permIt1[cs]++;
+
 	}
+
 	return true;
 }
 
-//permutes pMOLS in place
+//permutes i
 void MOLS::permuteMOLS(vector<lsquare> &pMOLS, permutation &rowPerm, permutation &colPerm ){
 	//permutation z(n);
 	//vector<lsquare> newMOLS(k);
@@ -773,8 +1444,6 @@ void MOLS::permuteMOLS(vector<lsquare> &pMOLS, permutation &rowPerm, permutation
  		}
 		std::sort(pMOLS[i].begin(), pMOLS[i].end(), My::permutationComparator );
 	}
-	//if (k>3)
-	//	std::sort(pMOLS.begin(), pMOLS.end(), My::squareComparator);
 	//pMOLS= newMOLS;
 
 
@@ -1154,43 +1823,10 @@ void MOLS::genCRS(vector<int> &curr, int ctr, int rem ){
 		curr[ctr]--;
 		rem = rem+ctr;
 		genCRS(curr, ctr+1, rem );
-
 	}
 	return;
-
 }
 
-void MOLS::getCycleStructure(permutation &p, vector<int> &nofCycles, map<int, vector<vector<int> > > &cycleLength_cycles_map ){
-	//bool visited[n+1] ={0};
-	vector<bool> visited (n+1, false);
-
-	int i=0;
-
-	for (i=0; i<n; i++){
-		//cout<<i<<endl;
-		if (i==p[i]){
-			nofCycles[1]++;
-			vector<int> thisCycle;
-			thisCycle.push_back(i);
-			cycleLength_cycles_map[thisCycle.size()].push_back(thisCycle);
-		}
-		else
-		{
-			if (!visited[i]){
-				vector<int> thisCycle;
-				int j=i+0;
-				do{
-					thisCycle.push_back(j);
-					visited[j] = true;
-					j = p[j];
-				}while (thisCycle.front() !=j);
-				//visited[j] = true;
-				nofCycles[thisCycle.size()]++;
-				cycleLength_cycles_map[thisCycle.size()].push_back(thisCycle);
-			}
-		}
-	}
-}
 void MOLS::getCycleStructure(permutation &p, vector<int> &nofCycles ){
 	vector<bool> visited (n+1, false);
 	int i=0, j, front, count=0;
@@ -1216,6 +1852,43 @@ void MOLS::getCycleStructure(permutation &p, vector<int> &nofCycles ){
  			}
 		}
 	}
+}
+
+void MOLS::getCycleStructure(permutation &p, vector<int> &nofCycles, map<int, vector<vector<int> > > &cycleLength_cycles_map ){
+	//bool visited[n+1] ={0};
+	vector<bool> visited (n+1, false);
+	permutation::const_iterator permIt;
+	vector<int> permArr(n+1, 0);
+	//int permArr[n]={0};
+	int i=0;
+
+	for (i=0; i<n; i++){
+		//cout<<i<<endl;
+		if (i==p[i]){
+			nofCycles[1]++;
+			vector<int> thisCycle;
+			thisCycle.push_back(i);
+			cycleLength_cycles_map[thisCycle.size()].push_back(thisCycle);
+		}
+		else
+		{
+			if (!visited[i]){
+				vector<int> thisCycle;
+				int j=i+0;
+				do{
+					thisCycle.push_back(j);
+					visited[j] = true;
+					j = p[j];
+				}while (thisCycle.front() !=j);
+
+				nofCycles[thisCycle.size()]++;
+				cycleLength_cycles_map[thisCycle.size()].push_back(thisCycle);
+			}
+		}
+	}
+
+	//for (i=0; i<n+1; i++)
+	//	cout<< nofCycles[i]<< " ";
 }
 
 /*list<permutation> MOLS::genRelevantPermutations(permutation p){
@@ -1281,7 +1954,6 @@ vector<permutation> MOLS::genRelevantPermutations(permutation &p){
 		vector<permutation> arrPossibilities[nofCycles[length]];
 
 		if (nofCycles[length]>0){
-
 			int ind=0;
 			//list<permutation> arrPossibilities[nofCycles[length]];
 
@@ -1303,10 +1975,8 @@ vector<permutation> MOLS::genRelevantPermutations(permutation &p){
 			}
 
 			if (nofCycles[length] == 1){ //no need to worry about shuffling permutations, there is only one
-
 				for (cycleIt = arrPossibilities[0].begin(); cycleIt != arrPossibilities[0].end(); ++cycleIt){
 					arrPossPerLength[ctr].push_back(copyPerm(*cycleIt));
-
 				}
 				ctr++;
 
@@ -1314,7 +1984,6 @@ vector<permutation> MOLS::genRelevantPermutations(permutation &p){
 			else{ //now we need to both shuffle and select
 
 				vector<int> orderOfCycle;
-
 				for (int i=0; i<nofCycles[length]; i++)
 					orderOfCycle.push_back(i);
 
@@ -1322,7 +1991,6 @@ vector<permutation> MOLS::genRelevantPermutations(permutation &p){
 				int pno = 0;
 
 				do{
-
 					vector<permutation> templ;
 					vector<permutation> templ2;
 
@@ -1365,7 +2033,6 @@ vector<permutation> MOLS::genRelevantPermutations(permutation &p){
 					arrPossPerLength[ctr].insert(arrPossPerLength[ctr].end(),cperm_to_possibilities_map[y].begin(), cperm_to_possibilities_map[y].end());
 
 				ctr++;
-
 			}
 
 			//now create options for this length and every other length
@@ -1525,12 +2192,9 @@ vector<int> MOLS::rowMeets(permutation &p1, permutation &p2){
  * Returns >0 if p> target
  */
 int MOLS::compareCS(permutation &p , vector<int> &targetCS){
-	//int n = p.size();
-	//int thisCS[n+1] ={0};
 	vector<int> thisCS(n+1, 0);
 	//map<int, vector<vector<int> > > dummy_cycles_map;
-	getCycleStructure(p, thisCS  );
-
+	getCycleStructure(p, thisCS);
  	/*cout<<endl;printPerm(p);
 	for(j=0; j<n;j++){
 		cout<<thisCS[j]<<" ";}
@@ -1539,16 +2203,14 @@ int MOLS::compareCS(permutation &p , vector<int> &targetCS){
 			cout<<targetCS[j]<<" ";}
 	cout<<endl;*/
 
-
 	for (unsigned int i=0; i<n; i++){
 		//cout<<targetCS[i]<<"<>" <<thisCS[i];
 		if (! (targetCS[i] == thisCS[i])	)
 			return targetCS[i]-thisCS[i];
 	}
-
 	return 0; //the same
-
 }
+
 //boolean just says that p is alreasy a CS, not just a perm
 int MOLS::compareCS(permutation &pCS , vector<int> &targetCS, bool t){
 	//printPerm(pCS); printPerm(targetCS);
@@ -1561,7 +2223,6 @@ int MOLS::compareCS(permutation &pCS , vector<int> &targetCS, bool t){
 	return 0; //the same
 
 }
-
 
 list<vector<int> > MOLS::getSmallRelCS( vector<lsquare> &pMOLS, list<permutation> &listP){
 	permutation targetRCS(pMOLS[1].front());
@@ -1614,16 +2275,18 @@ list<vector<int> > MOLS::getSmallRelCS( vector<lsquare> &pMOLS, list<permutation
 						//cout<<  data1[0]<<" "<<data1[1]<<" "<<data1[2]<<" "<<data1[3]<< " perm "; printPerm(*permIt2);cout<<", "; printPerm(*permIt1); cout<<endl;
 
 						squares.push_back(data);
+
 					}
+
+
+
 				}
 			}
+
+
 		}
 	}
  }
-bool MOLS::getSmallRelCS( vector<lsquare>& pMOLS ){
-	return getSmallRelCS(   pMOLS, currentCS );
-}
-
 bool MOLS::getSmallRelCS( vector<lsquare>& pMOLS, permutation& mapTo ){
  	//permutation targetRCS(pMOLS[1].front());
 	RCSperms.clear();
@@ -1721,16 +2384,110 @@ bool MOLS::getSmallRelCS( vector<lsquare>& pMOLS, permutation& mapTo ){
  	return true;
 }
 
-//permutation *MOLS::flatten(permutation &pNow){
-permutation *MOLS::flatten(permutation &pNow){
+bool MOLS::getSmallRelCS( vector<lsquare>& pMOLS ){
+ 	//permutation targetRCS(pMOLS[1].front());
+	RCSperms.clear();
+	RCSsquares.clear();
+	int i,j;
 
+ 	vector<vector<vector<vector<int> > > >  tempPerms(k, vector<vector<vector<int> > >(k  ));
+	vector<vector<vector<vector<int> > > >  tempSquares(k, vector<vector<vector<int> > >(k  ));
+	vector<int> data(4) ;
+	vector<int> dataPos(2);
+
+ 	for(i=0; i<k-1; i++){
+		for(j=i+1; j<k; j++){
+
+		 	for (unsigned int ii=0; ii< pMOLS[i].size(); ii++){
+				for (unsigned int jj=0; jj< pMOLS[j].size(); jj++){
+
+
+					permutation rcsV = rcs(pMOLS[i][ii], pMOLS[j][jj]);
+
+					//if this rcs is equal to smallest store in list
+					//if (!lexicographical_compare(rcsV.begin(), rcsV.end(), targetRCS.begin(), targetRCS.end())
+					//		and !lexicographical_compare(targetRCS.begin(), targetRCS.end(), rcsV.begin(), rcsV.end())){
+					int comparison = compareCS(rcsV, currentCS);
+					if (comparison<0){
+ 						return false;
+					}
+					if (comparison==0){
+					// if (true){
+
+						data[0]=i;
+						data[1] =j;
+					    dataPos = rowMeets(pMOLS[i][ii], pMOLS[j][jj]);
+						data[2] = dataPos[0];
+						data[3] = dataPos[1];
+						//if (!(data[0]==0&&data[1]==1&&data[2]==0) ){
+						tempPerms[data[0]][data[1]].push_back(pMOLS[i][ii]);
+						//RCSperms.push_back(pMOLS[i][ii]);
+						//cout<<  data[0]<<" "<<data[1]<<" "<<data[2]<<" "<<data[3]<< " perm "; printPerm(*permIt1);cout<<", "; printPerm(*permIt2); cout<<endl;
+						tempSquares[data[0]][data[1]].push_back(data);
+						//RCSsquares.push_back(data);
+
+						//and in reverse
+
+						data[0]=j;
+						data[1] =i;
+						dataPos = rowMeets(pMOLS[j][jj],pMOLS[i][ii]);
+						data[2] = dataPos[0];
+						data[3] = dataPos[1];
+						// if (!(data1[0]==0&&data1[1]==1&&data1[2]==0) ){
+						//RCSperms.push_back(pMOLS[j][jj]);
+						//cout<<  data1[0]<<" "<<data1[1]<<" "<<data1[2]<<" "<<data1[3]<< " perm "; printPerm(*permIt2);cout<<", "; printPerm(*permIt1); cout<<endl;
+
+						//RCSsquares.push_back(data1);
+
+						tempPerms[data[0]][data[1]].push_back(pMOLS[j][jj]);
+						tempSquares[data[0]][data[1]].push_back(data);
+					}
+
+					/*rcsV = rcs(pMOLS[j][jj],pMOLS[i][ii]);
+
+					if (compareCS(rcsV, currentCS)==0){
+					// if(true){
+						vector<int> data1 ;
+						data1.assign(4, 0);
+						data1[0]=j;
+						data1[1] =i;
+						vector<int> dataPos = rowMeets(pMOLS[j][jj],pMOLS[i][ii]);
+						data1[2] = dataPos[0];
+						data1[3] = dataPos[1];
+						// if (!(data1[0]==0&&data1[1]==1&&data1[2]==0) ){
+							listP.push_back(pMOLS[j][jj]);
+							//cout<<  data1[0]<<" "<<data1[1]<<" "<<data1[2]<<" "<<data1[3]<< " perm "; printPerm(*permIt2);cout<<", "; printPerm(*permIt1); cout<<endl;
+
+							squares.push_back(data1);
+						// }
+					}*/
+				}
+			}
+		}
+	}
+ 	//cout<<"begin fors"<<endl;
+ 	for(i=0; i<k ; i++){
+ 		for(j=0; j<k; j++){
+ 			if (tempPerms[i][j].size()>0){
+ 				RCSperms.insert( RCSperms.end(), tempPerms[i][j].begin(), tempPerms[i][j].end());
+ 				RCSsquares.insert(RCSsquares.end(),tempSquares[i][j].begin(), tempSquares[i][j].end() );
+ 			}
+ 		}
+ 	} 	//cout<<"end fors"<<RCSperms.size()<<" "<<RCSsquares.size()<<endl;
+ /*	for(i=0; i<RCSsquares.size() ; i++){
+ 	 	 cout<<RCSsquares[i][0]<<" "<<RCSsquares[i][1]<<endl;
+ 	 	}*/
+
+ 	return true;
+}
+
+permutation MOLS::flatten(permutation &pNow){
 
 	//cout<<" Flatten in - "; printPerm(pNow);cout.flush();
 	vector<bool> visited (n+1, false);
-	//permutation z;
-	permutation *y= new permutation;
-	//permutation y;
-	vector<permutation> size_cycles(n );
+	permutation z, y;
+	vector<permutation> size_cycles(n
+                                 );
 
 	int j;
 	for (unsigned int i=0; i<n; i++){
@@ -1739,6 +2496,7 @@ permutation *MOLS::flatten(permutation &pNow){
 			vector<int > thiscycle;
 			j=i;
 			do{
+
 				visited[j] = true;
 				//cout<<"push "<<pNow[j]<<endl;
 				thiscycle.push_back(pNow[j]);
@@ -1752,14 +2510,19 @@ permutation *MOLS::flatten(permutation &pNow){
 	}
 	for (unsigned int i=1; i<n; i++){
 			 if (size_cycles[i].size()>0)
-				 (*y).insert((*y).end(), size_cycles[i].begin(), size_cycles[i].end());
-				 //(*y).insert((*y).end(), size_cycles[i].begin(), size_cycles[i].end());
+				 y.insert(y.end(), size_cycles[i].begin(), size_cycles[i].end());
 		}
 
+
+
+	//cout<<" Flatten outut - "; printPerm(z);cout<<endl;
 	return y;
+
+
+
 }
 
- list<permutation> MOLS::getShuffles(permutation &pOrig, permutation &pNow){
+list<permutation> MOLS::getShuffles(permutation &pOrig, permutation &pNow){
 
 	//vector<permutation> listShuffles ;
 	// listShuffles=genRelevantPermutations(pNow);
@@ -1767,35 +2530,18 @@ permutation *MOLS::flatten(permutation &pNow){
 
 	vector<permutation>::const_iterator pi;
 	//cout<< "listShuffles size - "<< listShuffles.size()<<endl;
-	//permutation *f = flatten(pNow);
-	permutation *f = flatten(pNow);
+	permutation f = flatten(pNow);
 	//for (pi=listShuffles.begin(); pi!=listShuffles.end(); ++pi){
 	//permutation z(n);
 	for (pi=possibleShuffles.begin(); pi!=possibleShuffles.end(); ++pi){
 		 for (unsigned int i=0; i<n; i++)
-			 z[(*f)[(*pi)[i]]] =i;
+			 z[f[(*pi)[i]]] =i;
 
 		 listtemp.push_back( z);
 	}
-	delete f;
+
 	return listtemp;
 }
-/*list<permutation> *MOLS::getShuffles(permutation &pOrig, permutation &pNow){
-
-	list<permutation> *listtemp = new list<permutation>;
-
-	vector<permutation>::const_iterator pi;
-	//cout<< "listShuffles size - "<< listShuffles.size()<<endl;
-	permutation *f = flatten(pNow);
-	for (pi=possibleShuffles.begin(); pi!=possibleShuffles.end(); ++pi){
-		 for (unsigned int i=0; i<n; i++)
-			 z[(*f)[(*pi)[i]]] =i;
-
-		 (*listtemp).push_back( z);
-	}
-	delete f;
-	return listtemp;
-}*/
 
 bool MOLS::noSmallerRCS(permutation &smallestRCS, vector<lsquare> &pMOLS){
  	vector< vector<int> >::const_iterator testRel;
@@ -1807,17 +2553,18 @@ bool MOLS::noSmallerRCS(permutation &smallestRCS, vector<lsquare> &pMOLS){
 
 	vector<lsquare> ordMOLS ;
 
-	//for all relative cs that may be smallest
 	for (testRel=RCSsquares.begin(); testRel!=RCSsquares.end(); testRel++){
 		// cout<<endl<<" "<<(*testRel)[0]<<" "<<(*testRel)[1]<<" "<<(*testRel)[2]<<" "<<(*testRel)[3] <<" ";
-		//if the order of the squares change
+
 		if ((*testRel)[0]!= currentOrder[0] || currentOrder[1]!=(*testRel)[1]){
 			currentOrder[0]=(*testRel)[0];
 			currentOrder[1]=(*testRel)[1];
 			ordMOLS = changeOrder(pMOLS, (*testRel)[0],(*testRel)[1]);
 		}
-		//"Standardize" into rolled up form
+
+
 		vector<lsquare> roMOLS(ordMOLS);
+
 		standardForm(roMOLS, (*testRel)[2],(*testRel)[3], *testPermsit);
 		/*cout<<"Before";
 		printMOLSPerms(partMOLS );
@@ -1830,15 +2577,14 @@ bool MOLS::noSmallerRCS(permutation &smallestRCS, vector<lsquare> &pMOLS){
 		cout<<"STD Form - "<<endl;printMOLSPerms(roMOLS);cout.flush();*/
 
 		list<permutation> allShuffles = getShuffles(smallestRCS, roMOLS[1].front());
-		//for all permutations that keep the structure of the first 2
 		for (permIt = allShuffles.begin(); permIt != allShuffles.end(); ++permIt) {
 			//vector<lsquare> tMOLS(roMOLS);
 			/*//permutation realShuffle = composition(inverse( *permIt),targetP );
 			//printPerm( *permIt);
 			//permuteMOLS(tMOLS, *permIt, *permIt);
  			b*/
-			//if (!comparePartialMOLS(partMOLS, tMOLS) )// if  part > temp
 
+			//if (!comparePartialMOLS(partMOLS, tMOLS) )// if  part > temp
 			if (!testPermuteMOLS(roMOLS, *permIt, *permIt) )// if  part > temp
 			{
 				/*for (i=0; i<k; i++){
@@ -1853,7 +2599,6 @@ bool MOLS::noSmallerRCS(permutation &smallestRCS, vector<lsquare> &pMOLS){
 			}
 
 		}
-		//delete allShuffles;
 		testPermsit++;
 	}
 
@@ -1894,8 +2639,7 @@ bool MOLS::noSmallerRCS(permutation &smallestRCS, vector<lsquare> &pMOLS){
 		list<permutation> allShuffles = getShuffles(smallestRCS,currPerm  );
 
 		for (permIt = allShuffles.begin(); permIt != allShuffles.end(); ++permIt) {
-
-
+		//	vector<lsquare> tMOLS(roMOLS) ;
 			//permuteMOLS(tMOLS, *permIt, *permIt );
 
 
@@ -1916,7 +2660,6 @@ bool MOLS::noSmallerRCS(permutation &smallestRCS, vector<lsquare> &pMOLS){
 			}
 		}
 		testPermsit1++;
-		//delete allShuffles;
 	}
 
 	return true;
@@ -1926,31 +2669,20 @@ bool MOLS::noSmallerRCS(permutation &smallestRCS){
 	return noSmallerRCS(smallestRCS, partMOLS);
 }
 
-//only used by issmallestconjugate
-bool MOLS::isSmallest4(permutation &smallestRCS, vector<lsquare> &pMOLS){
-
-	numIsSmallest[partMOLS[k-1].size()]++;
-	if (!noSmallerRCS(smallestRCS, pMOLS ) ){
-		return false;
-	}
-	numIsSmallestTrue[partMOLS[k-1].size()]++;
-
-	return true;
-}
 
 bool MOLS::isSmallest4( ){
 
-	if (currSquare == k-1	){
-		numIsSmallest[partMOLS[k-1].size()]++;
+if (currSquare == k-1	){
+	numIsSmallest[partMOLS[k-1].size()]++;
 
-		if (!noSmallerRCS( partMOLS[1].front() )){
-			/*for (i=0; i<k; i++)
+	if (!noSmallerRCS( partMOLS[1].front() )){
+		/*for (i=0; i<k; i++)
 				printPerm(partMOLS[i].back());
 		cout << "smaller cs"<<endl;*/
 			return false;
 		}
-		numIsSmallestTrue[partMOLS[k-1].size()]++;
-	}
+numIsSmallestTrue[partMOLS[k-1].size()]++;
+}
 	return true;
 
 }
@@ -1973,6 +2705,17 @@ bool MOLS::isSmallest4(bool t ){
 	}
 	return true;
 
+}
+
+bool MOLS::isSmallest4(permutation &smallestRCS, vector<lsquare> &pMOLS){
+
+	numIsSmallest[partMOLS[k-1].size()]++;
+	if (!noSmallerRCS(smallestRCS, pMOLS ) ){
+		return false;
+	}
+	numIsSmallestTrue[partMOLS[k-1].size()]++;
+
+	return true;
 }
 
 bool MOLS::isSmallestConjugateMOLS(vector<lsquare> &pMOLS ){
@@ -2011,7 +2754,7 @@ bool MOLS::isSmallestConjugateMOLS(vector<lsquare> &pMOLS ){
 		thisCS.clear();thisCS.resize(n+1, 0);
 	}
 
-	vector<vector<int> >listPerms((k*k+3*k)/2, oaPerm );
+	/*vector<vector<int> >listPerms((k*k+3*k)/2, oaPerm );
 	int temp;
 	for (int i =0; i<k; i++){
 		temp = listPerms[i][0];
@@ -2049,7 +2792,7 @@ bool MOLS::isSmallestConjugateMOLS(vector<lsquare> &pMOLS ){
 
 				for (unsigned int i =0; i< maxCS; i++){
 					//we want to try and map it to all of the smaller and equal csreps
-					getCycleStructure(cycleStructureReps[i],  thisCS  );
+					getCycleStructure(cycleStructureReps[i],  thisCS, dummy_cycles_map );
 					//int cnt = compareCS(thisCS, currentCS, true); cout<<"Z"<<cnt;
 					if (getSmallRelCS(nMOLS,  thisCS )){
 						if (!isSmallest4(cycleStructureReps[i], nMOLS)){
@@ -2062,10 +2805,10 @@ bool MOLS::isSmallestConjugateMOLS(vector<lsquare> &pMOLS ){
 					//dummy_cycles_map.clear();
 				}
 
-	}
+	}*/
 
 
-	/*while (next_permutation(oaPerm.begin(), oaPerm.end())){
+	while (next_permutation(oaPerm.begin(), oaPerm.end())){
 		//cout<<"permutations "; printPerm(oaPerm);cout<<endl;
 		for (int j =0; j<k; j++){
 			for (int i =0; i<n*n; i++){
@@ -2091,92 +2834,9 @@ bool MOLS::isSmallestConjugateMOLS(vector<lsquare> &pMOLS ){
 
 			//dummy_cycles_map.clear();
 		} //end for csreps
-	}//end while*/
+	}//end while
 	//currentCS.clear();currentCS.resize(n+1, 0);
 	return true;
-}
-
-bool MOLS::isSmallestConjugateMOLS1(vector<lsquare>& partMOLS ){
-	return true;
- 	/*int i;
- 	vector<lsquare> smallestMOLS ;
-	for (i=0; i<k; i++){
-		smallestMOLS[i] = partMOLS[i];
-	}
-
-	list<permutation> allCSR; //list of all smalle s u0^1 cycle structures
-	//int cycles[n+1];
-	vector<int> cycles(n+1, 0);
-	for (i=0; i<=n+1; i++)
-		cycles[i]=0;
-	cycles[1] =1;
-	genCRS(cycles, 2, n-1); //we may only have one overlap
-
-	vector<permutation>::iterator CSRit;
-
-	permutation smallestRCS = partMOLS[1].front();
-	vector<lsquare> t1MOLS , newMOLS;
-
-    vector<vector<int> > oa (k+2, vector<int>(n*n)	);
-    vector<vector<int> > oanew(k+2, vector<int>(n*n));
-
-   	MOLStoOA(partMOLS, oa);
-	//printOA<k,n>(oa);
-	//int rowls[] = {0,1,2,3,4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17};
-	permutation p[3] ;//(rowls, rowls + n / sizeof(int) );
-
-	for (i=0;i<k+2; i++){
-			p[0].push_back(i);
-			p[1].push_back(i);
-			p[2].push_back(i);
-	}
-
-	p[0][0]=2; p[0][2] = 0; //(i,j,k) - (k,, j, i...)
-	p[1][1]=2; p[1][2] = 1; //(i,j,k) - (k,, j, i...)
-	p[2][0]=2; p[2][1] = 3;p[2][2]=0; p[2][3] = 1; //(i,j,k) - (k,l, i, j...)
-
-	int parr[k+2];
-	int perm_ctr = 0;
-
-	while(perm_ctr<3 ){
-		i=0;
-
-		permutation::iterator permIt;
-		for (permIt = p[perm_ctr].begin(); permIt !=  p[perm_ctr].end(); ++permIt){
-			parr[i++] =  *permIt;
-		}
-
-		permuteOA(oa, parr, oanew);
-		//cout<< "  -  oanew "; cout.flush();
-		//printOA<k,n>(oanew);
-		OAtoMOLS(oanew, t1MOLS);
-		//cout<< "  -  t1MOLS "; cout.flush();
-		//OAtoMOLS<k,n>(oanew, (flag1? t2MOLS : t1MOLS));
-		//printMOLS(t1MOLS, k);
-
-		//getSmallest<k,n>(t1MOLS, newMOLS);
-		//newmols comes bac empty
-		//list<permutation> testPs =
-		//if( !noSmallerRCS<k,n>(smallestRCS, partMOLS, partMOLS){
-		for (CSRit=allCSR.begin(); CSRit!= allCSR.end(); ++CSRit){
-			//printPerm(*CSRit); cout.flush();
-			if (!noSmallerRCS((*CSRit), t1MOLS )){
-				for (i=0; i<k; i++)
-		    				printPerm(partMOLS[i].back());
-		    		cout << "smaller cs"<<endl;
-				cout <<"Not smallest conjugate";
-				return false;
-			}
-
-		}
-		int x;//if this wasnt smalleer, wip the mols so that a new one may be tried
-		for (x=0; x<k; x++)
-			t1MOLS[x].clear();
-
-		perm_ctr++;
-	}
-
-	return true;*/
 }
 
 void MOLS::buildCurrentLS(){
@@ -2200,10 +2860,10 @@ void MOLS::buildCurrentLS(){
 
 bool MOLS::checkFit( permutation &p){
 	if (n==0) return true;
-	if ( currSquare>3)
-		if (p[1]<partMOLS[currSquare-1][0][1])
-			return false;
 	int i= 0; //row
+
+
+
 	i=0;
 //	printMOLS(partMOLS); cout<<"Try to fit perm "; printPerm(p);cout<<endl;
 	for (unsigned int i=0;i< p.size(); i++){
@@ -2226,7 +2886,8 @@ bool MOLS::rcsOrthog(permutation &p1, permutation &p2){
 }
 
 bool MOLS::checkOrthogonal(permutation &P){
-
+	if (nof_calls_made++ > nof_calls_limit&& send_checkpoint<1) send_checkpoint = 1;
+	
 	unsigned int sz, count;
 	for (unsigned int i=0; i<k; i++){
 		if (i!=currSquare){ //for every square except the current one
@@ -2238,11 +2899,39 @@ bool MOLS::checkOrthogonal(permutation &P){
                         count++;
                 if (count != 1)
                     return false;
+
 			}
+
+//            for (unsigned int j =0; j<sz; j++)
+//				if(!rcsOrthog(partMOLS[i][j], P))
+//					return false;
+
 		}
 	}
 	return true;
 
+//    unsigned int sz, count;
+//    vector<int> met(n,-1);
+//    for (unsigned int i=0; i<k; i++){
+//
+//		if (i!=currSquare){ //for every square except the current one
+//			sz = partMOLS[i].size();
+//			count = 0;
+//			//vector<bool> met(n, false);
+//			for (unsigned int j =0; j<n; j++)
+//                if (currLS[i][j][P[j]] != n){
+//                   if  (met[currLS[i][j][P[j]]] == i)
+//                        return false;
+//                   else{
+//                        met[currLS[i][j][P[j]]]= i;
+//                        count++;
+//                   }
+//                }
+//            if (count!=sz   )
+//                return false;
+//		}
+//	}
+//    return true;
 }
 
 bool MOLS::checkRCS( permutation &P){
@@ -2253,7 +2942,7 @@ bool MOLS::checkRCS( permutation &P){
 	//int targetCS[n+1]={0};
 	vector<int> targetCS(n+1);
 	//map<int, vector<vector<int> > > dummy_cycles_map;
-	getCycleStructure(partMOLS[1].front(), targetCS );
+	getCycleStructure(partMOLS[1].front(), targetCS  );
 
 	int i=0;
 	for (i=0; i<k; i++){
@@ -2435,14 +3124,15 @@ void MOLS::generatePossiblePermsLSRec3(permutation& p, int row,  vector<permutat
 	return;
 }
 
-
-
 vector<permutation> MOLS::generatePossiblePermsToInsert3(int square){
+//void MOLS::generatePossiblePermsToInsert3(int square){
+	//int cs = partMOLS[k-1].size();
+
 	permutation p(n);
 	int j=partMOLS[currSquare].size();
 	vector<permutation> currList;
-
 	p[0] =j; // because i in the first row is always in the ith position
+	vector<int> evec;
 	vector<vector<int> > poss(n);
 	vector<bool> left(n, true);
 	left[j] = false;
@@ -2457,7 +3147,10 @@ vector<permutation> MOLS::generatePossiblePermsToInsert3(int square){
 			left[p[i]] = false;
 		}*/
 	}
-	generatePossiblePermsLSRec3( p, 1,  currList, poss, left	) ;
+
+
+	generatePossiblePermsLSRec3( p, 1,   currList, poss, left	) ;
+	//sqSymPossPerms[square][cs] = currList;
   	return currList ;
 }
 
@@ -2483,6 +3176,10 @@ void MOLS::generatePossiblePermsToInsert2( list<permutation> &possiblePermList )
 	}
 
 	generatePossiblePermsLSRec2( p, 1,   possiblePermList, poss, left	) ;
+
+
+	//cout<< "Size"<<possiblePermList.size()<<endl;
+
 	return;
 }
 
@@ -2543,7 +3240,6 @@ void MOLS::addUniversal(permutation &p){
 
 	partMOLS[currSquare].push_back(p);
 
-
 	for (unsigned int i=0; i<n; i++)
 			currLS[currSquare][i][p[i]] = partMOLS[currSquare].size()-1;
 
@@ -2556,53 +3252,69 @@ void MOLS::addUniversal(permutation &p){
 
 void MOLS::removeUniversal(permutation &p){
 	//removeFromLS(p);
-
 	for (unsigned int i=0; i<n; i++)
-			currLS[currSquare][i][p[i]] = n;
-
+	currLS[currSquare][i][p[i]] = n;
 	partMOLS[currSquare].pop_back();
-
-
-
 }
 
 void MOLS::updatePossiblePerms(){
-
 	int csymb = partMOLS[k-1].size();
-	for (unsigned int i=0; i<k-1; i++){
-		if (squareChanged[i]){
-			sqSymPossPerms[i][csymb] = (generatePossiblePermsToInsert3(i));
-			squareChanged[i]=false;
-		}
+
+	for (unsigned int i=0; i<k; i++){
+		sqSymPossPerms[i][csymb] = (generatePossiblePermsToInsert3(i));
+		//sqSymCurrUni[i][csymb][0] = 0;
+		sqSymCurrUni[i][csymb][1] = sqSymPossPerms[i][csymb].size();
+
+		if (sqSymCurrUni[i][csymb][0] < 0  ) //if i have no position in the current list then i also have no
+			sqSymCurrUni[i][csymb][2] = sqSymPossPerms[i][csymb].size()+1; //limit one more, <
 	}
-	sqSymPossPerms[k-1][csymb] = (generatePossiblePermsToInsert3(k-1));
+
+
+	/*for (unsigned int i=0; i<k; i++)
+		generatePossiblePermsToInsert3(i);*/
 
  }
 
+double MOLS::calculate_fraction(){
+	double fd = (1.*nof_calls_made) / nof_calls_limit;
+
+	//double prev =1;
+	/*for (int j=0; j<3; j++){
+		for (int i=0; i<k; i++){
+			if (sqSymCurrUni[i][j][0] >0){
+				prev = 1./sqSymCurrUni[i][j][1]*prev;
+				fd = fd + sqSymCurrUni[i][j][0]*prev;
+			}
+		}
+	}*/
+	return fd;
+}
+
 void MOLS::findMOLS4(){
 	int counter = (partMOLS[currSquare].size())*k+currSquare-1;
+	//cout<< sqSymCurrUni[currSquare][partMOLS[currSquare].size()][0]<<" "<< sqSymCurrUni[currSquare][partMOLS[currSquare].size()][2]<<" "<< sqSymCurrUni[currSquare][partMOLS[currSquare].size()][1]<<endl;
  	//branchCount_[(partMOLS[currSquare].size())*k+currSquare-1]++;
-
+ 	// cout<<".";
 	int i=0;
 
 	if (partMOLS[k-1].size()==n) //if the last square is filled in completely, contains n permutations
-	{
-		if (isSmallestConjugateMOLS(partMOLS)){
-			//if (isSmallest2<k>(partMOLS)){
-			branchCount_[(partMOLS[currSquare].size())*k+currSquare-1]++;
+		{
+			if (isSmallestConjugateMOLS(partMOLS)){
+				//if (isSmallest2<k>(partMOLS)){
+				branchCount_[(partMOLS[currSquare].size())*k+currSquare-1]++;
 
-			printMOLS(partMOLS);
-			count_MOLS++;
-			//addToCompletedMOLS();
-			return;
+				printMOLS(partMOLS);
+				count_MOLS++;
+				//addToCompletedMOLS();
+				return;
 
-			//}
+				//}
+			}
+			else	return;
+
 		}
-		else	return;
-
-	}
-	else
-		branchCount_[(partMOLS[currSquare].size())*k+currSquare-1]++;
+		else
+			branchCount_[(partMOLS[currSquare].size())*k+currSquare-1]++;
 
 	/*printDots(2*partMOLS[0].size());
 	cout<<branchCount_[partMOLS[currSquare].size()*k+currSquare-1];
@@ -2615,13 +3327,13 @@ void MOLS::findMOLS4(){
 	}
 	cout<<endl;*/
 
-	/*if (currSquare==0&& partMOLS[k-1].size()==1)
+	/*if (currSquare==0&& partMOLS[k-1].size()==2)
 		return;*/
-
-
+	//else
+		//detailedCount[counter].push_back(0);
 	if (currSquare==0){
 		if (partMOLS[0].size()>0){
-			printDots(2*partMOLS[0].size());
+			/*printDots(2*partMOLS[0].size());
 			cout<<branchCount_[partMOLS[currSquare].size()*k+currSquare-1];
 			printDots(4);
 
@@ -2629,36 +3341,61 @@ void MOLS::findMOLS4(){
 				printPerm(partMOLS[i].back()	);
 				cout<<" ";
 			}
-			cout<<endl;
+			cout<<endl;*/
 			updatePossiblePerms();
   		}
 	}
-	if (currSquare==0 && partMOLS[k-1].size()==1)
-		return;
-
+/*
+	if (currSquare==0&& partMOLS[k-1].size()==2)
+		return;*/
 	//if this is the first universal iln the second square we look at the class representatives
-		//}
 
+		//}
 		if (partMOLS[currSquare].size()>0)
 		{//in general
  			int currUni = partMOLS[currSquare].size();
 
-			for (unsigned int possPermIt=0; possPermIt< sqSymPossPerms[currSquare][currUni].size(); ++possPermIt){
- 				if (checkOrthogonal(sqSymPossPerms[currSquare][currUni][possPermIt])){
+			for (unsigned int possPermIt=max(0,sqSymCurrUni[currSquare][currUni][0]); possPermIt< sqSymPossPerms[currSquare][currUni].size() && send_checkpoint<3; ++possPermIt){
+				//sqSymCurrUni[currSquare][currUni][0] = possPermIt; //keep track of current one for progress and checkpoint
+				sqSymCurrUni[currSquare][currUni][0] = possPermIt; //keep track of current one for progress and checkpoint
+ 				//if (boinc_time_to_checkpoint()  || nof_calls_made > nof_calls_limit) {
+				if ((possPermIt+1)%600==0 || nof_calls_made > nof_calls_limit	|| possPermIt == sqSymCurrUni[currSquare][currUni][2]) { //doing it before so that I have the 'prior' branchcounts
+					//if (partMOLS[0].size()<4){
+						//double fd = calculate_fraction();
+						//cout<< fd << endl;
+						//if (cpu_time) fd /= 2;
+						boinc_fraction_done(calculate_fraction());
+					//}
+					//cout<<" going into checkpoint sendval is="<<send_checkpoint<<endl;
+					if (possPermIt == sqSymCurrUni[currSquare][currUni][2]) {
+						send_checkpoint = 2;
+						cout<< "up against limit square: uni, curruni, size[1], limit[2], size() "<< currSquare<<" "<<currUni<<" "<<possPermIt<<" "<<sqSymCurrUni[currSquare][currUni][1]<<" "<<sqSymCurrUni[currSquare][currUni][2]<<", "<<sqSymPossPerms[currSquare][currUni].size()<<endl;
+					}
+					int retval = do_checkpoint(k,n, sqSymCurrUni, branchCount_, (clock()-dtime) + prev_time, count_MOLS,root, send_checkpoint, nof_calls_made);
+					//cout<<"Coming backsendval is="<<send_checkpoint<<endl;
+/*					if (retval) {
+				 						fprintf(stderr, "%s APP: upper_case checkpoint failed %d\n",
+				 								boinc_msg_prefix(buf, sizeof(buf)), retval
+				 						);
+				 						exit(retval);
+				 					}*/
+					if (send_checkpoint>0) send_checkpoint =3;
+					boinc_checkpoint_completed();
+				}
+
+
+				if (checkOrthogonal(sqSymPossPerms[currSquare][currUni][possPermIt])){
 					//printDots(currSquare, partMOLS[currSquare].size(), k);  printPerm((*possPermIt));
 					//if (checkRCS( (*possPermIt))){
  						addUniversal(sqSymPossPerms[currSquare][currUni][possPermIt]);
  						if (getSmallRelCS(partMOLS)){
  							if (isSmallest4()){
- 								squareChanged[currSquare]=true;
  								currSquare = (currSquare+1)%k;
  								//detailedCount[counter].back()++;
-
 								findMOLS4( );
 								currSquare = (currSquare-1+k)%k;
 							}
 						}
-
 						removeUniversal(sqSymPossPerms[currSquare][currUni][possPermIt]);
  					//}
 				/*	else{
@@ -2676,104 +3413,103 @@ void MOLS::findMOLS4(){
 					printPerm((*possPermIt));
 					cout<< "orthog "; cout<<endl;
 				}*/
+			}
+			for (int ii=currSquare; ii<k; ii++){
+				sqSymCurrUni[ii][currUni][0] = -1;
+				//cout<<"clear from "<<currSquare<<endl;
 
 			}
+			//sqSymCurrUni[currSquare][currUni][1] = -1;
+
+
 		}
-    else { //everything in else is for if inserting zero universals
-    	if(currSquare==1&& partMOLS[currSquare].size()==0	){
-    		vector<permutation>::iterator CSRit;
-    		int j=1;
-    		for (CSRit=cycleStructureReps.begin(); CSRit!= cycleStructureReps.end(); ++CSRit){
-    			//++CSRit; ++CSRit;++CSRit;
-    			if (printOut){
-    				cout << j++ << ". u0^1 = ";
-    				printPerm(*CSRit);
-    				cout<<endl;
+    else {
+        if(currSquare==1&& partMOLS[currSquare].size()==0	){
+        vector<permutation>::iterator CSRit;
+		int j=1;
+		for (CSRit=cycleStructureReps.begin(); CSRit!= cycleStructureReps.end(); ++CSRit){
+			//++CSRit; ++CSRit;++CSRit;
+			if (printOut){
+				cout << j++ << ". u0^1 = ";
+				printPerm(*CSRit);
+				cout<<endl;
 
-    			}
-    			//No need for any of the checks, as this is only the first perm in the second square.
-    			//Automatically orthog, will fit (empty), forced to be RCS..
+			}
+			//No need for any of the checks, as this is only the first perm in the second square.
+			//Automatically orthog, will fit (empty), forced to be RCS..
 
-    			//map<int, vector<vector<int> > > dummy_cycles_map;
-    			getCycleStructure(*CSRit,  currentCS );
-    			addUniversal(*CSRit);
-    			/*
+			//map<int, vector<vector<int> > > dummy_cycles_map;
+			getCycleStructure(*CSRit,  currentCS);
+			addUniversal(*CSRit);
+			/*
 			cout<<"Added cs"<<endl;
 			printMOLS(partMOLS);*/
-
-    			possibleShuffles = genRelevantPermutations(partMOLS[currSquare].front());
-    			squareChanged[currSquare]=true;
-    			currSquare = (currSquare+1)%k;
-    			//detailedCount[counter].back()++;
-    			findMOLS4( );
-    			currSquare = (currSquare-1+k)%k;
-    			/*cout<<"Return from findmols structure"<<endl;
+			possibleShuffles = genRelevantPermutations(partMOLS[currSquare].front());
+			currSquare = (currSquare+1)%k;
+			//detailedCount[counter].back()++;
+			findMOLS4( );
+			currSquare = (currSquare-1+k)%k;
+			/*cout<<"Return from findmols structure"<<endl;
 			printMOLS(partMOLS);*/
-    			removeUniversal(*CSRit);
+			removeUniversal(*CSRit);
 
-
-    			//CSRit = --cycleStructureReps.end();
-    			/*cout<<"cs removed"<<endl;
+			//CSRit = --cycleStructureReps.end();
+			/*cout<<"cs removed"<<endl;
 			printMOLS(partMOLS);*/
-    			currentCS.clear();currentCS.resize(n+1, 0);
-    			//partMOLS[currSquare].pop_back();
-    		}
-    	}
-    	else{ //not u_0^(1)
-    		//permutation P(identity) ;
-    		permutation P(partMOLS[currSquare-1].front()) ;
-    		if (partMOLS[currSquare].size()==0 ){
-    			//	if (!testPerms.size()==0){
-    			//cout << " sq "<< (currSquare+1)<< ", "<< testPerms.size()<<endl;
-    			do{
-    				if ((P.front()<1) ){
-    					if (P[1]-currSquare<=n-k && P[1]!=partMOLS[currSquare-1][0][1]){
-    						if (checkOrthogonal(P)){
-    							addUniversal(P);
-    							if (getSmallRelCS(partMOLS)){
-    								if (isSmallest4()){
-    									squareChanged[currSquare]=true;
-    									currSquare = (currSquare+1)%k;
-    									//detailedCount[counter].back()++;
-    									findMOLS4( );
-    									currSquare = (currSquare-1+k)%k;
-    								}
-    							}
-    							removeUniversal(P);
+			currentCS.clear();currentCS.resize(n+1, 0);
+			//partMOLS[currSquare].pop_back();
+		}
+	}
+	else{ //not u_0^(1) but still  0universal
+		permutation P(identity) ;
+		if (partMOLS[currSquare].size()==0 ){
+		//	if (!testPerms.size()==0){
+				//cout << " sq "<< (currSquare+1)<< ", "<< testPerms.size()<<endl;
+				do{
+					if (P.front()<1){
+						if (checkFit(P)){
+							if (checkOrthogonal(P)){
+									addUniversal(P);
+									if (getSmallRelCS(partMOLS)){
+										if (isSmallest4()){
+											currSquare = (currSquare+1)%k;
+											//detailedCount[counter].back()++;
+											findMOLS4( );
+											currSquare = (currSquare-1+k)%k;
+										}
+									}
+									removeUniversal(P);
 
-    							/*else{
+								/*else{
 
 									for (i=0; i<currSquare; i++){
 										printPerm(partMOLS[i].back());cout<<" ";}
 									printPerm(P);
 									cout<< "checkrcs "; cout<<endl;
 								}*/
-    						}
-    						/*else{
+							}
+							/*else{
 
 								for (i=0; i<currSquare; i++){
 									printPerm(partMOLS[i].back());cout<<" ";}
 								printPerm(P);
 								cout<< "orthog "; cout<<endl;
 							}*/
-    					}
-    					/*else{
+						}
+						/*else{
 
 							for (i=0; i<currSquare; i++){
 								printPerm(partMOLS[i].back());cout<<" ";}
 							printPerm(P);
 							cout<< "checkfit "; cout<<endl;
 						}*/
-    				}
-    				else break;
-    			}while(next_permutation(P.begin(), P.end()));
-    		}
-    	}
+					}
+					else break;
+				}while(next_permutation(P.begin(), P.end()));
+			}
+}
 	}
-
-
 	return ;
-
 }
 
 void MOLS::printAllStatics(){
@@ -2792,15 +3528,135 @@ void MOLS::printAllStatics(){
 	vector<permutation>::const_iterator it;
 	for (it = possibleShuffles.begin(); it != possibleShuffles.end(); it++)
 		printPerm(*it);
-
+	cout<< "sqSymbCurrUni \n";
+	for (int i=0; i<n; i++){
+		for (int j=0; j<k; j++){
+			cout << sqSymCurrUni[j][i][0]<<" "<<sqSymCurrUni[j][i][2] <<" "<<sqSymCurrUni[j][i][1] <<" ";
+		}
+		cout <<endl;
+	}
+	cout<<nof_calls_made<<endl;
+	for( int i=0; i <n*k; i++)
+		cout << branchCount_[i]<<" ";
+	cout <<endl;
 	cout<<endl<<"************DONE***************"<<endl;
 
 
 }
 
-int main(int argc,char *argv[]){
+//enumerate says whether it is called from a checkpoint restart, if it is we are interested in the branchcounts and nofcalls made
+int MOLS::restart(FILE* state, bool enumerate){
+	cout<<"into restart: "<<nof_calls_made<<endl;
+	//this->out = out;
+	char sc[100];
+	string s;
+	//skipthe first few lines, all found MOLS onlyinterested from the positions onwards
+	fgets(sc,100,state);
+	s= (string) sc;
+	cout<<"YY"<<s<<endl;
+	unsigned int i=0;
+	while(s[0] !='#' )
+	{
+		if (feof(state))	{
+			break;
+		}
+		fgets(sc,100,state);
+		s= (string) sc;
+	} //so the current line after the while is "#Positions"
+		
+	for (int i =0; i<1;i++){
 
-	MOLS threemols(10,9);
+			for (int j=0; j<n; j++){
+				fgets(sc,100,state);
+				if (feof(state)) break;
+				s = (string) sc;
+				cout<<s<<endl;
+				vector<string> vec = split(s,' ');
+				for (int jj =0; jj<k; jj++){
+					sqSymCurrUni[jj][j][0] = atoi(vec[3*jj].c_str());
+					sqSymCurrUni[jj][j][2] = atoi(vec[3*jj+1].c_str());
+					if (sqSymCurrUni[jj][j][0] >= 0 ) {
+						sqSymCurrUni[jj][j][1] = atoi(vec[3*jj+2].c_str());
+						sqSymCurrUni[jj][j][2] = atoi(vec[3*jj+1].c_str());
+					}
+					else
+						sqSymCurrUni[jj][j][2] = 10000000;
+				}
+
+			}// done reading positinos, assume we are not interested in branchcounts
+			//cout<<"done reading positions"<<endl;
+			for (int j=0; j< k*n; j++){
+				if (sqSymCurrUni[j%k][j/k][0]>=0 &&sqSymCurrUni[(j+1)%k][(j+1)/k][0]>=0){
+					//cout<<"decreasing branches"<<endl;
+					branchCount_[j] =  -1; //count every piece seperately, sum from resultfiles.
+					nof_calls_made--;
+				}
+				else
+					branchCount_[j] = 0;
+				//branchCount_[j] = atol(vec[j].c_str());
+			}
+
+			fgets(sc,100,state); //number of calls ie 454769976
+			if (feof(state)) break;
+			s = (string) sc;
+			if (enumerate) nof_calls_made = atol(s.c_str()); //not interestedin thiswhen restart iscalled form MOLS() with infile, only when called wiuth checkpoint
+			// when called with a checkpoint sent a s a starting position it breaks afer this, only up to callsmade is sent.
+			fgets(sc,100,state); //#Branchcounts
+			if (feof(state)) break;
+			//s = (string) sc;
+ 			fgets(sc,100,state); // actual branches
+			s = (string) sc;
+			cout<< s<<endl;
+			vector<string> vec = split(s,' ');
+			cout <<vec.size()<<vec[vec.size()-1]<< endl;
+			if (enumerate){
+				cout<< "I am reading branches from vecmols_state"<<endl;
+				for (int j=0; j< k*n; j++){
+					if (sqSymCurrUni[j%k][j/k][0]>=0 &&sqSymCurrUni[(j+1)%k][(j+1)/k][0]>=0){
+						branchCount_[j] = atol(vec[j].c_str())-1;
+					}
+					else
+						branchCount_[j] = atol(vec[j].c_str());
+				}
+			}
+
+			fgets(sc,100,state); // # time
+			fgets(sc,100,state); // actual time
+			if (feof(state)) break;
+			s = (string) sc;
+			vec = split(s,' ');
+			cout<< s;
+			if (enumerate) prev_time=(long) (1000000*atof(vec[0].c_str()));
+
+			fgets(sc,100,state); // # number of mols
+			fgets(sc,100,state); // actual number
+			if (feof(state)) break;
+			s = (string) sc;
+
+			cout<< s;
+			if (enumerate) count_MOLS=atoi(s.c_str());
+
+			// out.printf(s.c_str());
+			// out.printf( "restarting \n");
+
+		}
+		//out.flush();
+	cout<< "done restartingX: "<<nof_calls_made<<endl ;
+	printAllStatics();
+	
+	//return count_MOLS;
+	//return 0;
+
+	if (enumerate)
+		return enumerateMOLS();
+	else 
+		return 0;		
+}
+
+
+/*int main(int argc,char *argv[]){
+
+	MOLS threemols(7,3);
 	string filename = argv[1];
    //MOLS threemols(filename);
 /*
@@ -2810,7 +3666,13 @@ int main(int argc,char *argv[]){
 	std::cout.rdbuf(out.rdbuf());
 */
 
-	threemols.enumerateMOLS();
+
+
+
+	//threemols.enumerateMOLS();
 	// std::cout.rdbuf(coutbuf); //reset to standard output again
 
-}
+//}
+
+const char *BOINC_RCSID_33ac47a071 = "$Id: upper_case.cpp 20315 2010-01-29 15:50:47Z davea $";
+
